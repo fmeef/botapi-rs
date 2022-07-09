@@ -1,0 +1,17 @@
+[package]
+name = "botapi"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.58"
+reqwest = { version = "0.11.10", features = ["tokio-rustls"] }
+serde = { version = "1.0.137", features = ["derive"] }
+serde_json = "1.0.81"
+tokio = { version = "1.19.0", features = ["net", "socket2", "io-util", "tokio-macros"] }
+
+[build-dependencies]
+generate = { path = "./generate" }
+anyhow = "1.0.58"
