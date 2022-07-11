@@ -1,1 +1,3 @@
 /target
+**/gen_*.rs
+**/*.rs.bk
