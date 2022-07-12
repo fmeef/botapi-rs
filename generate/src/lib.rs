@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use schema::{Field, Spec, Type};
-use serde::Deserialize;
+
 pub(crate) mod schema;
 
 pub struct GenerateTypes(Spec);
@@ -15,11 +15,6 @@ struct CycleChecker<'a> {
 //static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
 static MEMBER_PREFIX: &str = "tg_";
-
-enum ArrayOrVal<T> {
-    Arr(Vec<T>),
-    Val(T),
-}
 
 impl<'a> CycleChecker<'a> {
     fn new(spec: &'a Spec) -> Self {
@@ -181,23 +176,6 @@ impl GenerateTypes {
         T: AsRef<str>,
     {
         name.as_ref().matches(ARRAY_OF).count()
-    }
-
-    #[allow(dead_code)]
-    fn get_or_array<'a, T, V>(&self, typename: &T, val: &'a T) -> Result<ArrayOrVal<V>>
-    where
-        T: AsRef<str>,
-        V: Deserialize<'a>,
-    {
-        let res = if self.is_array(typename) > 0 {
-            let v: Vec<V> = serde_json::from_str(&val.as_ref()[9..])?;
-            ArrayOrVal::Arr(v)
-        } else {
-            let v: V = serde_json::from_str(val.as_ref())?;
-            ArrayOrVal::Val(v)
-        };
-
-        Ok(res)
     }
 
     fn generate_struct<T>(&self, name: &T) -> Result<impl ToTokens>
