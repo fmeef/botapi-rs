@@ -29,15 +29,11 @@ impl<'a> CycleChecker<'a> {
         T: AsRef<str>,
     {
         if self.visited.insert(&parent.name) {
-            if parent.name == name.as_ref() {
-                return true;
-            } else {
-                if let Some(field) = &parent.fields {
-                    for supertype in field {
-                        if let Some(supertype) = self.spec.get_type(&supertype.types[0]) {
-                            if self.check_parent(supertype, name) {
-                                return true;
-                            }
+            if let Some(field) = &parent.fields {
+                for supertype in field {
+                    if let Some(supertype) = self.spec.get_type(&supertype.types[0]) {
+                        if self.check_parent(supertype, name) {
+                            return true;
                         }
                     }
                 }
