@@ -35,12 +35,8 @@ impl<'a> CycleChecker<'a> {
                 if let Some(field) = &parent.fields {
                     for supertype in field {
                         if let Some(supertype) = self.spec.get_type(&supertype.types[0]) {
-                            if supertype.name == name.as_ref() {
+                            if self.check_parent(supertype, name) {
                                 return true;
-                            } else {
-                                if self.check_parent(supertype, name) {
-                                    return true;
-                                }
                             }
                         }
                     }
