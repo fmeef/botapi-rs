@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
-use quote::{format_ident, quote, ToTokens, TokenStreamExt, __private::TokenStream};
+use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use schema::{Field, Spec, Type};
 use serde::Deserialize;
 pub(crate) mod schema;
@@ -12,7 +12,7 @@ struct CycleChecker<'a> {
     visited: HashSet<&'a str>,
 }
 
-static MULTITYPE_ENUM_PREFIX: &str = "E";
+//static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
 static MEMBER_PREFIX: &str = "tg_";
 
@@ -35,7 +35,7 @@ impl<'a> CycleChecker<'a> {
     {
         if self.visited.insert(&parent.name) {
             if parent.name == name.as_ref() {
-                true
+                return true;
             } else {
                 if let Some(field) = &parent.fields {
                     for supertype in field {
@@ -49,14 +49,11 @@ impl<'a> CycleChecker<'a> {
                             }
                         }
                     }
-                    parent.name == name.as_ref()
-                } else {
-                    parent.name == name.as_ref()
                 }
             }
-        } else {
-            parent.name == name.as_ref()
         }
+
+        parent.name == name.as_ref()
     }
 }
 
@@ -75,9 +72,6 @@ impl GenerateTypes {
             .types
             .values()
             .filter_map(|v| self.generate_struct(&v.name).ok());
-        for v in self.0.types.values() {
-            let st = self.generate_struct(&v.name)?;
-        }
         let e = self.generate_enum(self.0.types.values(), &"GlobalTypes")?;
         let uses = self.generate_use()?;
         let res = quote! {
@@ -133,7 +127,7 @@ impl GenerateTypes {
             let res = self.type_mapper(&fm);
             let res = format_ident!("{}", res);
             let mut quote = quote!();
-            for x in 0..nested {
+            for _ in 0..nested {
                 let vec = quote! {
                     Vec<
                 };
@@ -157,7 +151,7 @@ impl GenerateTypes {
                     });
                 }
             }
-            for x in 0..nested {
+            for _ in 0..nested {
                 let vec = quote! {
                     >
                 };
@@ -189,6 +183,7 @@ impl GenerateTypes {
         name.as_ref().matches(ARRAY_OF).count()
     }
 
+    #[allow(dead_code)]
     fn get_or_array<'a, T, V>(&self, typename: &T, val: &'a T) -> Result<ArrayOrVal<V>>
     where
         T: AsRef<str>,
