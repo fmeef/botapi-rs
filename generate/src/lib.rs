@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{ascii::AsciiExt, collections::HashSet};
 
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
@@ -12,7 +12,7 @@ struct CycleChecker<'a> {
     visited: HashSet<&'a str>,
 }
 
-//static MULTITYPE_ENUM_PREFIX: &str = "E";
+static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
 static MEMBER_PREFIX: &str = "tg_";
 
@@ -53,23 +53,25 @@ impl GenerateTypes {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
 
-    fn preamble(&self) -> Result<impl ToTokens> {
+    fn preamble(&self) -> Result<TokenStream> {
         let structs = self
             .0
             .types
             .values()
             .filter_map(|v| self.generate_struct(&v.name).ok());
-        let e = self.generate_enum(self.0.types.values(), &"GlobalTypes")?;
+        let typeenums = self.generate_multitype_enums()?;
+        let enums = self.generate_enum(self.0.types.values(), &"GlobalTypes")?;
         let uses = self.generate_use()?;
         let res = quote! {
             #uses
             #( #structs )*
-            #e
+            #enums
+            #typeenums
         };
         Ok(res)
     }
 
-    fn generate_use(&self) -> Result<impl ToTokens> {
+    fn generate_use(&self) -> Result<TokenStream> {
         Ok(quote! {
             use serde::{Deserialize, Serialize};
         })
@@ -85,6 +87,59 @@ impl GenerateTypes {
             "Float" => "f64".to_owned(),
             _ => field.as_ref().to_owned(),
         }
+    }
+
+    fn get_multitype_name<T>(&self, typename: &T, fieldname: &T) -> String
+    where
+        T: AsRef<str>,
+    {
+        format!(
+            "{}{}{}",
+            MULTITYPE_ENUM_PREFIX,
+            typename.as_ref(),
+            fieldname.as_ref()
+        )
+    }
+
+    fn generate_multitype_enums(&self) -> Result<TokenStream> {
+        let mut tokens = quote!();
+
+        for jsontype in self.0.types.values() {
+            if let Some(fields) = jsontype.fields.as_ref() {
+                for field in fields {
+                    if field.types.len() > 1 {
+                        let name = self.get_multitype_name(&jsontype.name, &field.name);
+                        let typeiter: Vec<String> =
+                            field.types.iter().map(|t| self.type_mapper(&t)).collect();
+                        let t = self.generate_enum_str(typeiter.as_slice(), &name)?;
+                        tokens.extend(t);
+                    }
+                }
+            }
+        }
+
+        Ok(tokens)
+    }
+
+    fn generate_enum_str<'a, N, I>(&self, types: &[I], name: &N) -> Result<TokenStream>
+    where
+        N: AsRef<str>,
+        I: AsRef<str>,
+    {
+        let names_iter = types
+            .iter()
+            .map(|v| v.as_ref()[0..1].to_uppercase() + &v.as_ref()[1..])
+            .map(|v| format_ident!("{}", v));
+        let types_iter = types.iter().map(|v| format_ident!("{}", v.as_ref()));
+        let name = format_ident!("{}", name.as_ref());
+        let e = quote! {
+            pub enum #name {
+                #(
+                    #names_iter(#types_iter)
+                ),*
+            }
+        };
+        Ok(e)
     }
 
     fn generate_enum<'a, T, N>(&'a self, types: T, name: &N) -> Result<impl ToTokens>
@@ -105,12 +160,16 @@ impl GenerateTypes {
     }
 
     /// TODO: generate the e_* enum type
-    fn choose_type(&self, field: &Field, parent: Option<&Type>) -> Result<TokenStream> {
+    fn choose_type(&self, field: &Field, parent: &Type) -> Result<TokenStream> {
         let mytype = &field.types[0];
         let nested = self.is_array(&mytype);
         let mut checker = CycleChecker::new(&self.0);
         let t = if nested > 0 {
-            let fm = &mytype[ARRAY_OF.len() * nested..];
+            let fm = if field.types.len() > 1 {
+                self.get_multitype_name(&parent.name, &field.name)
+            } else {
+                mytype[ARRAY_OF.len() * nested..].to_owned()
+            };
             let res = self.type_mapper(&fm);
             let res = format_ident!("{}", res);
             let mut quote = quote!();
@@ -120,23 +179,14 @@ impl GenerateTypes {
                 };
                 quote.extend(vec);
             }
-            match parent {
-                Some(parent) => {
-                    if checker.check_parent(parent, &fm) {
-                        quote.extend(quote! {
-                            Box<#res>
-                        });
-                    } else {
-                        quote.extend(quote! {
-                            #res
-                        });
-                    }
-                }
-                None => {
-                    quote.extend(quote! {
-                        #res
-                    });
-                }
+            if checker.check_parent(parent, &fm) {
+                quote.extend(quote! {
+                    Box<#res>
+                });
+            } else {
+                quote.extend(quote! {
+                    #res
+                });
             }
             for _ in 0..nested {
                 let vec = quote! {
@@ -146,15 +196,15 @@ impl GenerateTypes {
             }
             quote
         } else {
-            let mytype = self.type_mapper(&mytype);
+            let mytype = if field.types.len() > 1 {
+                self.get_multitype_name(&parent.name, &field.name)
+            } else {
+                self.type_mapper(&mytype)
+            };
             let t = format_ident!("{}", mytype);
-            if let Some(parent) = parent {
-                if checker.check_parent(parent, &mytype) {
-                    quote! {
-                        Box<#t>
-                    }
-                } else {
-                    quote!(#t)
+            if checker.check_parent(parent, &mytype) {
+                quote! {
+                    Box<#t>
                 }
             } else {
                 quote!(#t)
@@ -170,7 +220,7 @@ impl GenerateTypes {
         name.as_ref().matches(ARRAY_OF).count()
     }
 
-    fn generate_struct<T>(&self, name: &T) -> Result<impl ToTokens>
+    fn generate_struct<T>(&self, name: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
     {
@@ -186,9 +236,7 @@ impl GenerateTypes {
             .map(|v| &v.name)
             .map(|v| format_ident!("{}{}", MEMBER_PREFIX, v));
         let serdenames = fields.iter().map(|v| &v.name);
-        let fieldtypes = fields
-            .iter()
-            .filter_map(|v| self.choose_type(&v, Some(&t)).ok());
+        let fieldtypes = fields.iter().filter_map(|v| self.choose_type(&v, &t).ok());
         let res = quote! {
             #[derive(Serialize, Deserialize)]
             pub struct #typename {
