@@ -133,6 +133,7 @@ impl GenerateTypes {
         let types_iter = types.iter().map(|v| format_ident!("{}", v.as_ref()));
         let name = format_ident!("{}", name.as_ref());
         let e = quote! {
+            #[derive(Serialize, Deserialize, Debug)]
             pub enum #name {
                 #(
                     #names_iter(#types_iter)
@@ -150,6 +151,7 @@ impl GenerateTypes {
         let types = types.map(|v| format_ident!("{}", v.name));
         let name = format_ident!("{}", name.as_ref());
         let e = quote! {
+            #[derive(Serialize, Deserialize, Debug)]
             pub enum #name {
                 #(
                     #types(#types)
@@ -238,7 +240,7 @@ impl GenerateTypes {
         let serdenames = fields.iter().map(|v| &v.name);
         let fieldtypes = fields.iter().filter_map(|v| self.choose_type(&v, &t).ok());
         let res = quote! {
-            #[derive(Serialize, Deserialize)]
+            #[derive(Serialize, Deserialize, Debug)]
             pub struct #typename {
                 #(
                     #[serde(rename = #serdenames)]
