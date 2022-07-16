@@ -6,7 +6,7 @@ use schema::{Field, Spec, Type};
 
 pub(crate) mod schema;
 
-pub struct GenerateTypes(Spec);
+pub struct Generate(Spec);
 struct CycleChecker<'a> {
     spec: &'a Spec,
     visited: HashSet<&'a str>,
@@ -44,9 +44,9 @@ impl<'a> CycleChecker<'a> {
     }
 }
 
-impl GenerateTypes {
-    pub fn new<T: AsRef<str>>(json: T) -> Result<GenerateTypes> {
-        Ok(GenerateTypes(serde_json::from_str(json.as_ref())?))
+impl Generate {
+    pub fn new<T: AsRef<str>>(json: T) -> Result<Generate> {
+        Ok(Generate(serde_json::from_str(json.as_ref())?))
     }
 
     pub fn generate_types(&self) -> Result<String> {

@@ -5,12 +5,12 @@ use std::{
 
 use ::rustfmt::{config::Config, format_input, Input};
 use anyhow::Result;
-use generate::GenerateTypes;
+use generate::Generate;
 
 fn main() -> Result<()> {
     let json = fs::read_to_string("./telegram-bot-api-spec/api.json")?;
 
-    let gen = GenerateTypes::new(json)?;
+    let gen = Generate::new(json)?;
     let out = gen.generate_types()?;
 
     fs::write("./src/gen_types.rs", out)?;
