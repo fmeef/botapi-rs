@@ -1,4 +1,4 @@
-use std::{ascii::AsciiExt, collections::HashSet};
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
@@ -7,6 +7,9 @@ use schema::{Field, Spec, Type};
 pub(crate) mod schema;
 
 pub struct Generate(Spec);
+
+pub struct GenerateTypes<'a>(&'a Spec);
+
 struct CycleChecker<'a> {
     spec: &'a Spec,
     visited: HashSet<&'a str>,
@@ -44,11 +47,7 @@ impl<'a> CycleChecker<'a> {
     }
 }
 
-impl Generate {
-    pub fn new<T: AsRef<str>>(json: T) -> Result<Generate> {
-        Ok(Generate(serde_json::from_str(json.as_ref())?))
-    }
-
+impl<'a> GenerateTypes<'a> {
     pub fn generate_types(&self) -> Result<String> {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
@@ -121,7 +120,7 @@ impl Generate {
         Ok(tokens)
     }
 
-    fn generate_enum_str<'a, N, I>(&self, types: &[I], name: &N) -> Result<TokenStream>
+    fn generate_enum_str<N, I>(&self, types: &[I], name: &N) -> Result<TokenStream>
     where
         N: AsRef<str>,
         I: AsRef<str>,
@@ -143,7 +142,7 @@ impl Generate {
         Ok(e)
     }
 
-    fn generate_enum<'a, T, N>(&'a self, types: T, name: &N) -> Result<impl ToTokens>
+    fn generate_enum<T, N>(&'a self, types: T, name: &N) -> Result<impl ToTokens>
     where
         T: Iterator<Item = &'a Type>,
         N: AsRef<str>,
@@ -249,5 +248,16 @@ impl Generate {
             }
         };
         Ok(res)
+    }
+}
+
+impl Generate {
+    pub fn new<T: AsRef<str>>(json: T) -> Result<Generate> {
+        Ok(Generate(serde_json::from_str(json.as_ref())?))
+    }
+
+    pub fn generate_types(&self) -> Result<String> {
+        let generate_types = GenerateTypes(&self.0);
+        generate_types.generate_types()
     }
 }
