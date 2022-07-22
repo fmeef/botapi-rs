@@ -9,15 +9,30 @@ pub(crate) mod schema;
 pub struct Generate(Spec);
 
 pub struct GenerateTypes<'a>(&'a Spec);
+pub struct GenerateMethods<'a>(&'a Spec);
 
 struct CycleChecker<'a> {
     spec: &'a Spec,
     visited: HashSet<&'a str>,
 }
 
+pub static TELEGRAM_API: &str = "https://api.telegram.org";
+
 static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
 static MEMBER_PREFIX: &str = "tg_";
+
+fn type_mapper<T>(field: &T) -> String
+where
+    T: AsRef<str>,
+{
+    match field.as_ref() {
+        "Integer" => "i64".to_owned(),
+        "Boolean" => "bool".to_owned(),
+        "Float" => "f64".to_owned(),
+        _ => field.as_ref().to_owned(),
+    }
+}
 
 impl<'a> CycleChecker<'a> {
     fn new(spec: &'a Spec) -> Self {
@@ -76,18 +91,6 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
-    fn type_mapper<T>(&self, field: &T) -> String
-    where
-        T: AsRef<str>,
-    {
-        match field.as_ref() {
-            "Integer" => "i64".to_owned(),
-            "Boolean" => "bool".to_owned(),
-            "Float" => "f64".to_owned(),
-            _ => field.as_ref().to_owned(),
-        }
-    }
-
     fn get_multitype_name<T>(&self, typename: &T, fieldname: &T) -> String
     where
         T: AsRef<str>,
@@ -109,7 +112,7 @@ impl<'a> GenerateTypes<'a> {
                     if field.types.len() > 1 {
                         let name = self.get_multitype_name(&jsontype.name, &field.name);
                         let typeiter: Vec<String> =
-                            field.types.iter().map(|t| self.type_mapper(&t)).collect();
+                            field.types.iter().map(|t| type_mapper(&t)).collect();
                         let t = self.generate_enum_str(typeiter.as_slice(), &name)?;
                         tokens.extend(t);
                     }
@@ -171,7 +174,7 @@ impl<'a> GenerateTypes<'a> {
             } else {
                 mytype[ARRAY_OF.len() * nested..].to_owned()
             };
-            let res = self.type_mapper(&fm);
+            let res = type_mapper(&fm);
             let res = format_ident!("{}", res);
             let mut quote = quote!();
             for _ in 0..nested {
@@ -200,7 +203,7 @@ impl<'a> GenerateTypes<'a> {
             let mytype = if field.types.len() > 1 {
                 self.get_multitype_name(&parent.name, &field.name)
             } else {
-                self.type_mapper(&mytype)
+                type_mapper(&mytype)
             };
             let t = format_ident!("{}", mytype);
             if checker.check_parent(parent, &mytype) {

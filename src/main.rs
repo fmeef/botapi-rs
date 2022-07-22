@@ -1,5 +1,6 @@
+pub mod bot;
 mod example;
-mod gen_types;
+pub mod gen_types;
 fn main() {
     println!("Hello, world!");
 }
