@@ -73,12 +73,19 @@ impl<'a> GenerateTypes<'a> {
             .types
             .values()
             .filter_map(|v| self.generate_struct(&v.name).ok());
+
+        let impls = self
+            .0
+            .types
+            .values()
+            .filter_map(|v| self.generate_impl(&v.name).ok());
         let typeenums = self.generate_multitype_enums()?;
         let enums = self.generate_enum(self.0.types.values(), &"GlobalTypes")?;
         let uses = self.generate_use()?;
         let res = quote! {
             #uses
             #( #structs )*
+            #( #impls )*
             #enums
             #typeenums
         };
@@ -224,6 +231,42 @@ impl<'a> GenerateTypes<'a> {
         name.as_ref().matches(ARRAY_OF).count()
     }
 
+    fn generate_impl<T>(&self, name: &T) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        let t = self
+            .0
+            .get_type(name)
+            .ok_or_else(|| anyhow!("type not found"))?;
+
+        let typename = format_ident!("{}", t.name);
+        let def = &Vec::<Field>::new();
+        let fields = t.fields.as_ref().unwrap_or(&def);
+        let fieldnames = fields
+            .iter()
+            .map(|v| &v.name)
+            .map(|v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let returnnames = fields
+            .iter()
+            .map(|v| &v.name)
+            .map(|v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let fieldtypes = fields.iter().filter_map(|v| self.choose_type(&v, &t).ok());
+
+        let res = quote! {
+            #[allow(dead_code)]
+            impl #typename {
+                #(
+                    pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
+                        &self.#returnnames
+                    }
+                )*
+            }
+
+        };
+        Ok(res)
+    }
+
     fn generate_struct<T>(&self, name: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -246,7 +289,7 @@ impl<'a> GenerateTypes<'a> {
             pub struct #typename {
                 #(
                     #[serde(rename = #serdenames)]
-                    pub #fieldnames: #fieldtypes
+                    #fieldnames: #fieldtypes
                 ),*
             }
         };
