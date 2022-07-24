@@ -22,6 +22,26 @@ static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
 static MEMBER_PREFIX: &str = "tg_";
 
+macro_rules! field_iter_str {
+    ($ty:expr, $func:expr) => {{
+        let res = $ty
+            .fields
+            .iter()
+            .flat_map(|v| v.iter().map(|f| f.name.as_str()))
+            .map($func);
+
+        res
+    }};
+}
+
+macro_rules! field_iter {
+    ($ty:expr, $func:expr) => {{
+        let res = $ty.fields.iter().flat_map(|v| v.iter()).map($func);
+
+        res
+    }};
+}
+
 fn type_mapper<T>(field: &T) -> String
 where
     T: AsRef<str>,
@@ -241,17 +261,10 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
 
         let typename = format_ident!("{}", t.name);
-        let def = &Vec::<Field>::new();
-        let fields = t.fields.as_ref().unwrap_or(&def);
-        let fieldnames = fields
-            .iter()
-            .map(|v| &v.name)
-            .map(|v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let returnnames = fields
-            .iter()
-            .map(|v| &v.name)
-            .map(|v| format_ident!("{}{}", MEMBER_PREFIX, v));
-        let fieldtypes = fields.iter().filter_map(|v| self.choose_type(&v, &t).ok());
+        let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let returnnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+
+        let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
 
         let res = quote! {
             #[allow(dead_code)]
@@ -276,14 +289,9 @@ impl<'a> GenerateTypes<'a> {
             .get_type(name)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", t.name);
-        let def = &Vec::<Field>::new();
-        let fields = t.fields.as_ref().unwrap_or(&def);
-        let fieldnames = fields
-            .iter()
-            .map(|v| &v.name)
-            .map(|v| format_ident!("{}{}", MEMBER_PREFIX, v));
-        let serdenames = fields.iter().map(|v| &v.name);
-        let fieldtypes = fields.iter().filter_map(|v| self.choose_type(&v, &t).ok());
+        let fieldnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let serdenames = field_iter_str!(&t, |v| v);
+        let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
         let res = quote! {
             #[derive(Serialize, Deserialize, Debug)]
             pub struct #typename {
