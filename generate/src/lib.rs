@@ -94,6 +94,11 @@ impl<'a> GenerateTypes<'a> {
             .values()
             .filter_map(|v| self.generate_struct(&v.name).ok());
 
+        let traits = self
+            .0
+            .types
+            .values()
+            .filter_map(|v| self.generate_trait(&v).ok());
         let impls = self
             .0
             .types
@@ -104,6 +109,7 @@ impl<'a> GenerateTypes<'a> {
         let uses = self.generate_use()?;
         let res = quote! {
             #uses
+            #( #traits )*
             #( #structs )*
             #( #impls )*
             #enums
@@ -276,6 +282,28 @@ impl<'a> GenerateTypes<'a> {
                 )*
             }
 
+        };
+        Ok(res)
+    }
+
+    fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
+        let typename = format_ident!("Trait{}", t.name);
+        let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+        let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
+            let subtypes = subtypes.iter().map(|v| format_ident!("Trait{}", v));
+            quote! {
+                : #( #subtypes )+*
+            }
+        } else {
+            quote!()
+        };
+        let res = quote! {
+            trait #typename #supertraits {
+                #(
+                    fn #fieldnames() -> #fieldtypes;
+                )*
+            }
         };
         Ok(res)
     }
