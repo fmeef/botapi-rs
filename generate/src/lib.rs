@@ -1,7 +1,10 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, str::FromStr};
 
 use anyhow::{anyhow, Result};
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
+use quote::{
+    format_ident, quote, ToTokens,
+    __private::{Punct, TokenStream, TokenTree},
+};
 use schema::{Field, Spec, Type};
 
 pub(crate) mod schema;
@@ -271,9 +274,12 @@ impl<'a> GenerateTypes<'a> {
         let returnnames = field_iter_str!(&supertype, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
         let fieldtypes = field_iter!(&supertype, |v| self.choose_type(v, &supertype).ok());
+        let comments = field_iter!(&supertype, |v| v.description.into_comment());
+
         let res = quote! {
              impl #trait_name for #typename {
                     #(
+                        #comments
                         fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
                             &self.#returnnames
                         }
@@ -298,6 +304,7 @@ impl<'a> GenerateTypes<'a> {
         let returnnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
 
         let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+        let comments = field_iter!(&t, |v| v.description.into_comment());
 
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes
@@ -311,6 +318,7 @@ impl<'a> GenerateTypes<'a> {
                 #[allow(dead_code)]
                 impl #typename {
                     #(
+                        #comments
                         pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
                             &self.#returnnames
                         }
@@ -322,21 +330,12 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
-    fn has_trait<T>(&self, t: &T) -> bool
-    where
-        T: AsRef<str>,
-    {
-        if let Some(t) = self.0.get_type(t) {
-            t.subtype_of.as_ref().map(|v| v.len()).unwrap_or(0) > 0
-        } else {
-            false
-        }
-    }
-
     fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
         let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
         let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+
+        let comments = field_iter!(&t, |v| v.description.into_comment());
         let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
             let subtypes = subtypes.iter().map(|v| format_ident!("Trait{}", v));
             quote! {
@@ -348,6 +347,7 @@ impl<'a> GenerateTypes<'a> {
         let res = quote! {
             trait #typename #supertraits {
                 #(
+                    #comments
                     fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes;
                 )*
             }
@@ -367,10 +367,14 @@ impl<'a> GenerateTypes<'a> {
         let fieldnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
         let serdenames = field_iter_str!(&t, |v| v);
         let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+        let comments = field_iter!(&t, |v| v.description.into_comment());
+        let struct_comment = t.description.concat().into_comment();
         let res = quote! {
+            #struct_comment
             #[derive(Serialize, Deserialize, Debug)]
             pub struct #typename {
                 #(
+                    #comments
                     #[serde(rename = #serdenames)]
                     #fieldnames: #fieldtypes
                 ),*
@@ -388,5 +392,21 @@ impl Generate {
     pub fn generate_types(&self) -> Result<String> {
         let generate_types = GenerateTypes(&self.0);
         generate_types.generate_types()
+    }
+}
+
+trait IntoComment {
+    fn into_comment(&self) -> TokenStream;
+}
+
+impl<T> IntoComment for T
+where
+    T: AsRef<str>,
+{
+    fn into_comment(&self) -> TokenStream {
+        let comment = self.as_ref();
+        quote! {
+            #[doc = #comment ]
+        }
     }
 }
