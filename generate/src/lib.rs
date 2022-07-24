@@ -257,6 +257,33 @@ impl<'a> GenerateTypes<'a> {
         name.as_ref().matches(ARRAY_OF).count()
     }
 
+    fn generate_trait_impl<T>(&self, t: &Type, traitname: &T) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        let supertype = self
+            .0
+            .get_type(traitname)
+            .ok_or_else(|| anyhow!("type not found"))?;
+        let typename = format_ident!("{}", traitname.as_ref());
+        let fieldnames =
+            field_iter_str!(&supertype, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let returnnames = field_iter_str!(&supertype, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let trait_name = format_ident!("Trait{}", traitname.as_ref());
+        let fieldtypes = field_iter!(&supertype, |v| self.choose_type(v, &supertype).ok());
+        let res = quote! {
+             impl #trait_name for #typename {
+                    #(
+                        fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
+                            &self.#returnnames
+                        }
+                    )*
+                }
+        };
+
+        Ok(res)
+    }
+
     fn generate_impl<T>(&self, name: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -272,18 +299,38 @@ impl<'a> GenerateTypes<'a> {
 
         let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
 
-        let res = quote! {
-            #[allow(dead_code)]
-            impl #typename {
-                #(
-                    pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
-                        &self.#returnnames
-                    }
-                )*
+        let res = if let Some(subtypes) = t.subtypes.as_ref() {
+            let impls = subtypes
+                .iter()
+                .map(|v| self.generate_trait_impl(&t, &v).ok());
+            quote! {
+                #( #impls )*
             }
+        } else {
+            quote! {
+                #[allow(dead_code)]
+                impl #typename {
+                    #(
+                        pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
+                            &self.#returnnames
+                        }
+                    )*
+                }
 
+            }
         };
         Ok(res)
+    }
+
+    fn has_trait<T>(&self, t: &T) -> bool
+    where
+        T: AsRef<str>,
+    {
+        if let Some(t) = self.0.get_type(t) {
+            t.subtype_of.as_ref().map(|v| v.len()).unwrap_or(0) > 0
+        } else {
+            false
+        }
     }
 
     fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
@@ -301,7 +348,7 @@ impl<'a> GenerateTypes<'a> {
         let res = quote! {
             trait #typename #supertraits {
                 #(
-                    fn #fieldnames() -> #fieldtypes;
+                    fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes;
                 )*
             }
         };
