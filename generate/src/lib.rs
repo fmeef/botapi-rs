@@ -3,24 +3,15 @@ use std::collections::HashSet;
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use schema::{Field, Spec, Type};
+use util::*;
 
 pub(crate) mod schema;
+pub(crate) mod util;
 
 pub struct Generate(Spec);
 
 pub struct GenerateTypes<'a>(&'a Spec);
 pub struct GenerateMethods<'a>(&'a Spec);
-
-struct CycleChecker<'a> {
-    spec: &'a Spec,
-    visited: HashSet<&'a str>,
-}
-
-pub static TELEGRAM_API: &str = "https://api.telegram.org";
-
-static MULTITYPE_ENUM_PREFIX: &str = "E";
-static ARRAY_OF: &str = "Array of ";
-static MEMBER_PREFIX: &str = "tg_";
 
 macro_rules! field_iter_str {
     ($ty:expr, $func:expr) => {{
@@ -40,64 +31,11 @@ macro_rules! field_iter {
         res
     }};
 }
+pub static TELEGRAM_API: &str = "https://api.telegram.org";
 
-fn is_optional<T>(field: &Field, tokenstram: T) -> TokenStream
-where
-    T: ToTokens,
-{
-    if field.description.starts_with("Optional") {
-        let mut start = quote! {
-            Option<
-        };
-        start.extend(tokenstram.to_token_stream());
-        start.extend(quote! {
-            >
-        });
-        start
-    } else {
-        tokenstram.to_token_stream()
-    }
-}
-
-fn type_mapper<T>(field: &T) -> String
-where
-    T: AsRef<str>,
-{
-    match field.as_ref() {
-        "Integer" => "i64".to_owned(),
-        "Boolean" => "bool".to_owned(),
-        "Float" => "f64".to_owned(),
-        _ => field.as_ref().to_owned(),
-    }
-}
-
-impl<'a> CycleChecker<'a> {
-    fn new(spec: &'a Spec) -> Self {
-        CycleChecker {
-            spec,
-            visited: HashSet::new(),
-        }
-    }
-
-    fn check_parent<T>(&mut self, parent: &'a Type, name: &T) -> bool
-    where
-        T: AsRef<str>,
-    {
-        if self.visited.insert(&parent.name) {
-            if let Some(field) = &parent.fields {
-                for supertype in field {
-                    if let Some(supertype) = self.spec.get_type(&supertype.types[0]) {
-                        if self.check_parent(supertype, name) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-
-        parent.name == name.as_ref()
-    }
-}
+static MULTITYPE_ENUM_PREFIX: &str = "E";
+static ARRAY_OF: &str = "Array of ";
+static MEMBER_PREFIX: &str = "tg_";
 
 impl<'a> GenerateTypes<'a> {
     pub fn generate_types(&self) -> Result<String> {
@@ -146,18 +84,6 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
-    fn get_multitype_name<T>(&self, typename: &T, fieldname: &T) -> String
-    where
-        T: AsRef<str>,
-    {
-        format!(
-            "{}{}{}",
-            MULTITYPE_ENUM_PREFIX,
-            typename.as_ref(),
-            fieldname.as_ref()
-        )
-    }
-
     fn generate_multitype_enums(&self) -> Result<TokenStream> {
         let mut tokens = quote!();
 
@@ -165,7 +91,7 @@ impl<'a> GenerateTypes<'a> {
             if let Some(fields) = jsontype.fields.as_ref() {
                 for field in fields {
                     if field.types.len() > 1 {
-                        let name = self.get_multitype_name(&jsontype.name, &field.name);
+                        let name = get_multitype_name(&jsontype.name, &field.name);
                         let typeiter: Vec<String> =
                             field.types.iter().map(|t| type_mapper(&t)).collect();
                         let t = self.generate_enum_str(typeiter.as_slice(), &name)?;
@@ -220,67 +146,6 @@ impl<'a> GenerateTypes<'a> {
         Ok(e)
     }
 
-    /// TODO: generate the e_* enum type
-    fn choose_type(&self, field: &Field, parent: &Type) -> Result<TokenStream> {
-        let mytype = &field.types[0];
-        let nested = self.is_array(&mytype);
-        let mut checker = CycleChecker::new(&self.0);
-        let t = if nested > 0 {
-            let fm = if field.types.len() > 1 {
-                self.get_multitype_name(&parent.name, &field.name)
-            } else {
-                mytype[ARRAY_OF.len() * nested..].to_owned()
-            };
-            let res = type_mapper(&fm);
-            let res = format_ident!("{}", res);
-            let mut quote = quote!();
-            for _ in 0..nested {
-                let vec = quote! {
-                    Vec<
-                };
-                quote.extend(vec);
-            }
-            if checker.check_parent(parent, &fm) {
-                quote.extend(quote! {
-                    Box<#res>
-                });
-            } else {
-                quote.extend(quote! {
-                    #res
-                });
-            }
-            for _ in 0..nested {
-                let vec = quote! {
-                    >
-                };
-                quote.extend(vec);
-            }
-            quote
-        } else {
-            let mytype = if field.types.len() > 1 {
-                self.get_multitype_name(&parent.name, &field.name)
-            } else {
-                type_mapper(&mytype)
-            };
-            let t = format_ident!("{}", mytype);
-            if checker.check_parent(parent, &mytype) {
-                quote! {
-                    Box<#t>
-                }
-            } else {
-                quote!(#t)
-            }
-        };
-        Ok(is_optional(field, t))
-    }
-
-    fn is_array<T>(&self, name: &T) -> usize
-    where
-        T: AsRef<str>,
-    {
-        name.as_ref().matches(ARRAY_OF).count()
-    }
-
     fn generate_trait_impl<T>(&self, traitname: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -294,7 +159,7 @@ impl<'a> GenerateTypes<'a> {
             field_iter_str!(&supertype, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
         let returnnames = field_iter_str!(&supertype, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
-        let fieldtypes = field_iter!(&supertype, |v| self.choose_type(v, &supertype).ok());
+        let fieldtypes = field_iter!(&supertype, |v| choose_type(&self.0, v, &supertype).ok());
         let comments = field_iter!(&supertype, |v| v.description.into_comment());
 
         let res = quote! {
@@ -324,7 +189,7 @@ impl<'a> GenerateTypes<'a> {
         let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
         let returnnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
 
-        let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+        let fieldtypes = field_iter!(&t, |v| choose_type(&self.0, v, &t).ok());
         let comments = field_iter!(&t, |v| v.description.into_comment());
 
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
@@ -352,7 +217,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
         let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+        let fieldtypes = field_iter!(&t, |v| choose_type(&self.0, v, &t).ok());
 
         let comments = field_iter!(&t, |v| v.description.into_comment());
         let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
@@ -385,7 +250,7 @@ impl<'a> GenerateTypes<'a> {
         let typename = format_ident!("{}", t.name);
         let fieldnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
         let serdenames = field_iter_str!(&t, |v| v);
-        let fieldtypes = field_iter!(&t, |v| self.choose_type(v, &t).ok());
+        let fieldtypes = field_iter!(&t, |v| choose_type(&self.0, v, &t).ok());
         let comments = field_iter!(&t, |v| v.description.into_comment());
         let struct_comment = t.description.concat().into_comment();
         let res = quote! {
