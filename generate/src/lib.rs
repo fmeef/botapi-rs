@@ -91,11 +91,16 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn preamble(&self) -> Result<TokenStream> {
-        let structs = self
-            .0
-            .types
-            .values()
-            .filter_map(|v| self.generate_struct(&v.name).ok());
+        let structs = self.0.types.values().filter_map(|v| {
+            if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
+                self.generate_struct(&v.name).ok()
+            } else {
+                let vec = Vec::new();
+                let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
+                let subtypes = subtypes.iter().filter_map(|v| self.0.get_type(v));
+                self.generate_enum(subtypes, &v.name).ok()
+            }
+        });
 
         let traits = self
             .0
@@ -181,7 +186,7 @@ impl<'a> GenerateTypes<'a> {
         Ok(e)
     }
 
-    fn generate_enum<T, N>(&'a self, types: T, name: &N) -> Result<impl ToTokens>
+    fn generate_enum<T, N>(&'a self, types: T, name: &N) -> Result<TokenStream>
     where
         T: Iterator<Item = &'a Type>,
         N: AsRef<str>,
