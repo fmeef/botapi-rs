@@ -37,7 +37,6 @@ macro_rules! field_iter_str {
 macro_rules! field_iter {
     ($ty:expr, $func:expr) => {{
         let res = $ty.fields.iter().flat_map(|v| v.iter()).map($func);
-
         res
     }};
 }
@@ -280,7 +279,7 @@ impl<'a> GenerateTypes<'a> {
         name.as_ref().matches(ARRAY_OF).count()
     }
 
-    fn generate_trait_impl<T>(&self, t: &Type, traitname: &T) -> Result<TokenStream>
+    fn generate_trait_impl<T>(&self, traitname: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
     {
@@ -327,9 +326,7 @@ impl<'a> GenerateTypes<'a> {
         let comments = field_iter!(&t, |v| v.description.into_comment());
 
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
-            let impls = subtypes
-                .iter()
-                .map(|v| self.generate_trait_impl(&t, &v).ok());
+            let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
             quote! {
                 #( #impls )*
             }
