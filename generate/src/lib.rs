@@ -410,6 +410,21 @@ impl Generate {
         let generate_types = GenerateTypes(&self.0);
         generate_types.generate_types()
     }
+
+    pub fn generate_methods(&self) -> Result<String> {
+        let generate_methods = GenerateMethods(&self.0);
+        generate_methods.generate_methods()
+    }
+}
+
+impl<'a> GenerateMethods<'a> {
+    fn generate_methods(&self) -> Result<String> {
+        Ok(self.preamble()?.into_token_stream().to_string())
+    }
+
+    fn preamble(&self) -> Result<TokenStream> {
+        Ok(quote!())
+    }
 }
 
 trait IntoComment {
