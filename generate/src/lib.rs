@@ -1,10 +1,7 @@
-use std::{collections::HashSet, str::FromStr};
+use std::collections::HashSet;
 
 use anyhow::{anyhow, Result};
-use quote::{
-    format_ident, quote, ToTokens,
-    __private::{Punct, TokenStream, TokenTree},
-};
+use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use schema::{Field, Spec, Type};
 
 pub(crate) mod schema;
@@ -43,6 +40,24 @@ macro_rules! field_iter {
 
         res
     }};
+}
+
+fn is_optional<T>(field: &Field, tokenstram: T) -> TokenStream
+where
+    T: ToTokens,
+{
+    if field.description.starts_with("Optional") {
+        let mut start = quote! {
+            Option<
+        };
+        start.extend(tokenstram.to_token_stream());
+        start.extend(quote! {
+            >
+        });
+        start
+    } else {
+        tokenstram.to_token_stream()
+    }
 }
 
 fn type_mapper<T>(field: &T) -> String
@@ -255,7 +270,7 @@ impl<'a> GenerateTypes<'a> {
                 quote!(#t)
             }
         };
-        Ok(t)
+        Ok(is_optional(field, t))
     }
 
     fn is_array<T>(&self, name: &T) -> usize
