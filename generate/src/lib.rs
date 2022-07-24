@@ -191,6 +191,7 @@ impl<'a> GenerateTypes<'a> {
         let name = format_ident!("{}", name.as_ref());
         let e = quote! {
             #[derive(Serialize, Deserialize, Debug)]
+            #[serde(untagged)]
             pub enum #name {
                 #(
                     #names_iter(#types_iter)
@@ -209,6 +210,7 @@ impl<'a> GenerateTypes<'a> {
         let name = format_ident!("{}", name.as_ref());
         let e = quote! {
             #[derive(Serialize, Deserialize, Debug)]
+            #[serde(untagged)]
             pub enum #name {
                 #(
                     #types(#types)
