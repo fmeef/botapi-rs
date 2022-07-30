@@ -16,6 +16,7 @@ pub static TELEGRAM_API: &str = "https://api.telegram.org";
 static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
 static MEMBER_PREFIX: &str = "tg_";
+static INPUT_FILE: &str = "InputFile";
 
 impl<'a> GenerateTypes<'a> {
     pub fn generate_types(&self) -> Result<String> {
@@ -27,10 +28,14 @@ impl<'a> GenerateTypes<'a> {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
                 self.generate_struct(&v.name).ok()
             } else {
-                let vec = Vec::new();
-                let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
-                let subtypes = subtypes.iter().filter_map(|v| self.0.get_type(v));
-                self.generate_enum(subtypes, &v.name).ok()
+                if v.name == INPUT_FILE {
+                    Some(self.generate_inputfile_enum())
+                } else {
+                    let vec = Vec::new();
+                    let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
+                    let subtypes = subtypes.iter().filter_map(|v| self.0.get_type(v));
+                    self.generate_enum(subtypes, &v.name).ok()
+                }
             }
         });
 
@@ -124,6 +129,17 @@ impl<'a> GenerateTypes<'a> {
             }
         };
         Ok(e)
+    }
+
+    fn generate_inputfile_enum(&self) -> TokenStream {
+        let input_file = format_ident!("{}", INPUT_FILE);
+
+        quote! {
+            #[derive(Serialize, Deserialize, Debug)]
+            pub enum #input_file {
+                Bytes(Vec<u8>)
+            }
+        }
     }
 
     fn generate_trait_impl<T>(&self, traitname: &T) -> Result<TokenStream>
