@@ -29,16 +29,11 @@ where
         .map(func)
 }
 
-pub(crate) fn get_multitype_name<T>(typename: &T, fieldname: &T) -> String
+pub(crate) fn get_multitype_name<T>(fieldname: &T) -> String
 where
     T: AsRef<str>,
 {
-    format!(
-        "{}{}{}",
-        MULTITYPE_ENUM_PREFIX,
-        typename.as_ref(),
-        fieldname.as_ref()
-    )
+    format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname.as_ref())
 }
 
 fn is_array<T>(name: &T) -> usize
@@ -54,7 +49,7 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
     let mut checker = CycleChecker::new(spec);
     let t = if nested > 0 {
         let fm = if field.types.len() > 1 {
-            get_multitype_name(&parent.name, &field.name)
+            get_multitype_name(&field.name)
         } else {
             mytype[ARRAY_OF.len() * nested..].to_owned()
         };
@@ -85,7 +80,7 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
         quote
     } else {
         let mytype = if field.types.len() > 1 {
-            get_multitype_name(&parent.name, &field.name)
+            get_multitype_name(&field.name)
         } else {
             type_mapper(&mytype)
         };
