@@ -87,14 +87,9 @@ where
     T: ToTokens,
 {
     if field.description.starts_with("Optional") {
-        let mut start = quote! {
-            Option<
-        };
-        start.extend(tokenstram.to_token_stream());
-        start.extend(quote! {
-            >
-        });
-        start
+        quote! {
+            Option<#tokenstram>
+        }
     } else {
         tokenstram.to_token_stream()
     }
