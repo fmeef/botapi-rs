@@ -10,6 +10,25 @@ struct CycleChecker<'a> {
     visited: HashSet<&'a str>,
 }
 
+pub(crate) fn field_iter<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
+where
+    F: FnMut(&Field) -> R,
+    F: 'a,
+{
+    t.fields.iter().flat_map(|v| v.iter()).map(func)
+}
+
+pub(crate) fn field_iter_str<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
+where
+    F: FnMut(&'a str) -> R,
+    F: 'a,
+{
+    t.fields
+        .iter()
+        .flat_map(|v| v.iter().map(|f| f.name.as_str()))
+        .map(func)
+}
+
 pub(crate) fn get_multitype_name<T>(typename: &T, fieldname: &T) -> String
 where
     T: AsRef<str>,

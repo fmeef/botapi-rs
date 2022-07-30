@@ -1,8 +1,6 @@
-use std::collections::HashSet;
-
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
-use schema::{Field, Spec, Type};
+use schema::{Spec, Type};
 use util::*;
 
 pub(crate) mod schema;
@@ -13,24 +11,6 @@ pub struct Generate(Spec);
 pub struct GenerateTypes<'a>(&'a Spec);
 pub struct GenerateMethods<'a>(&'a Spec);
 
-macro_rules! field_iter_str {
-    ($ty:expr, $func:expr) => {{
-        let res = $ty
-            .fields
-            .iter()
-            .flat_map(|v| v.iter().map(|f| f.name.as_str()))
-            .map($func);
-
-        res
-    }};
-}
-
-macro_rules! field_iter {
-    ($ty:expr, $func:expr) => {{
-        let res = $ty.fields.iter().flat_map(|v| v.iter()).map($func);
-        res
-    }};
-}
 pub static TELEGRAM_API: &str = "https://api.telegram.org";
 
 static MULTITYPE_ENUM_PREFIX: &str = "E";
@@ -156,11 +136,11 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", traitname.as_ref());
         let fieldnames =
-            field_iter_str!(&supertype, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let returnnames = field_iter_str!(&supertype, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+            field_iter_str(&supertype, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let returnnames = field_iter_str(&supertype, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
-        let fieldtypes = field_iter!(&supertype, |v| choose_type(&self.0, v, &supertype).ok());
-        let comments = field_iter!(&supertype, |v| v.description.into_comment());
+        let fieldtypes = field_iter(&supertype, |v| choose_type(&self.0, v, &supertype).ok());
+        let comments = field_iter(&supertype, |v| v.description.into_comment());
 
         let res = quote! {
              impl #trait_name for #typename {
@@ -186,11 +166,11 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
 
         let typename = format_ident!("{}", t.name);
-        let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let returnnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let returnnames = field_iter_str(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
 
-        let fieldtypes = field_iter!(&t, |v| choose_type(&self.0, v, &t).ok());
-        let comments = field_iter!(&t, |v| v.description.into_comment());
+        let fieldtypes = field_iter(&t, |v| choose_type(&self.0, v, &t).ok());
+        let comments = field_iter(&t, |v| v.description.into_comment());
 
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
@@ -216,10 +196,10 @@ impl<'a> GenerateTypes<'a> {
 
     fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
-        let fieldnames = field_iter_str!(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let fieldtypes = field_iter!(&t, |v| choose_type(&self.0, v, &t).ok());
+        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let fieldtypes = field_iter(&t, |v| choose_type(&self.0, v, &t).ok());
 
-        let comments = field_iter!(&t, |v| v.description.into_comment());
+        let comments = field_iter(&t, |v| v.description.into_comment());
         let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
             let subtypes = subtypes.iter().map(|v| format_ident!("Trait{}", v));
             quote! {
@@ -248,10 +228,10 @@ impl<'a> GenerateTypes<'a> {
             .get_type(name)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", t.name);
-        let fieldnames = field_iter_str!(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
-        let serdenames = field_iter_str!(&t, |v| v);
-        let fieldtypes = field_iter!(&t, |v| choose_type(&self.0, v, &t).ok());
-        let comments = field_iter!(&t, |v| v.description.into_comment());
+        let fieldnames = field_iter_str(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let serdenames = field_iter_str(&t, |v| v);
+        let fieldtypes = field_iter(&t, |v| choose_type(&self.0, v, &t).ok());
+        let comments = field_iter(&t, |v| v.description.into_comment());
         let struct_comment = t.description.concat().into_comment();
         let res = quote! {
             #struct_comment
