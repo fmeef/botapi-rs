@@ -1,4 +1,4 @@
-use crate::{schema::Method, ARRAY_OF, MULTITYPE_ENUM_PREFIX};
+use crate::{ARRAY_OF, MULTITYPE_ENUM_PREFIX};
 use std::collections::HashSet;
 
 use crate::schema::{Field, Spec, Type};
@@ -43,38 +43,6 @@ where
     name.as_ref().matches(ARRAY_OF).count()
 }
 
-pub(crate) fn choose_return_type(method: &Method) -> Result<TokenStream> {
-    let mytype = &method.returns[0];
-    let nested = is_array(&mytype);
-    let t = if nested > 0 {
-        let fm = &mytype[ARRAY_OF.len() * nested..];
-        let res = type_mapper(&fm);
-        let res = format_ident!("{}", res);
-        let mut quote = quote!();
-        for _ in 0..nested {
-            let vec = quote! {
-                Vec<
-            };
-            quote.extend(vec);
-        }
-        quote.extend(quote! {
-            #res
-        });
-        for _ in 0..nested {
-            let vec = quote! {
-                >
-            };
-            quote.extend(vec);
-        }
-        quote
-    } else {
-        let mytype = type_mapper(&mytype);
-        let t = format_ident!("{}", mytype);
-        quote!(#t)
-    };
-    Ok(t)
-}
-
 pub(crate) fn name_to_uppercase<T>(name: &T) -> String
 where
     T: AsRef<str>,
@@ -113,46 +81,6 @@ where
     let nested = is_array(t);
     let t = t.as_ref();
     &t[ARRAY_OF.len() * nested..]
-}
-
-pub(crate) fn choose_type_noparent(field: &Field) -> Result<TokenStream> {
-    let mytype = &field.types[0];
-    let nested = is_array(&mytype);
-    let t = if nested > 0 {
-        let fm = if field.types.len() > 1 {
-            get_multitype_name(&field.name)
-        } else {
-            mytype[ARRAY_OF.len() * nested..].to_owned()
-        };
-        let res = type_mapper(&fm);
-        let res = format_ident!("{}", res);
-        let mut quote = quote!();
-        for _ in 0..nested {
-            let vec = quote! {
-                Vec<
-            };
-            quote.extend(vec);
-        }
-        quote.extend(quote! {
-            #res
-        });
-        for _ in 0..nested {
-            let vec = quote! {
-                >
-            };
-            quote.extend(vec);
-        }
-        quote
-    } else {
-        let mytype = if field.types.len() > 1 {
-            get_multitype_name(&field.name)
-        } else {
-            type_mapper(&mytype)
-        };
-        let t = format_ident!("{}", mytype);
-        quote!(#t)
-    };
-    Ok(is_optional(field, t))
 }
 
 pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<TokenStream> {
