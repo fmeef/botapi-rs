@@ -106,6 +106,15 @@ where
     }
 }
 
+pub(crate) fn type_without_array<'a, T>(t: &'a T) -> &'a str
+where
+    T: AsRef<str>,
+{
+    let nested = is_array(t);
+    let t = t.as_ref();
+    &t[ARRAY_OF.len() * nested..]
+}
+
 pub(crate) fn choose_type_noparent(field: &Field) -> Result<TokenStream> {
     let mytype = &field.types[0];
     let nested = is_array(&mytype);
