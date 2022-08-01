@@ -1,9 +1,6 @@
-use std::{
-    fs::{self, File},
-    os,
-};
+use std::fs;
 
-use ::rustfmt::{config::Config, format_input, Input};
+use ::rustfmt::{config::Config, Input};
 use anyhow::Result;
 use generate::Generate;
 
@@ -21,7 +18,7 @@ fn main() -> Result<()> {
     for t in ["./src/gen_types.rs", "./src/gen_methods.rs"] {
         let input = Input::File(t.into());
         let config = Config::default();
-        let v = rustfmt::run(input, &config);
+        let _ = rustfmt::run(input, &config);
     }
     Ok(())
 }

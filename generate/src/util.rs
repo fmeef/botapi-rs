@@ -46,13 +46,6 @@ where
     name.as_ref().matches(ARRAY_OF).count()
 }
 
-pub(crate) fn name_to_uppercase<T>(name: &T) -> String
-where
-    T: AsRef<str>,
-{
-    name.as_ref()[0..1].to_uppercase() + &name.as_ref()[1..]
-}
-
 pub(crate) fn generate_fmt_display_enum<'a, T, V, U>(name: &T, types: V) -> TokenStream
 where
     T: AsRef<str>,

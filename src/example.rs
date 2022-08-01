@@ -1,16 +1,9 @@
 use anyhow::Result;
-use enum_dispatch::enum_dispatch;
+
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    bot::{Bot, Response},
-    gen_types::*,
-};
-
-enum TgTypes {
-    Location(Location),
-}
+use crate::{bot::Bot, gen_types::*};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Location {

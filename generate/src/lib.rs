@@ -10,7 +10,7 @@ use schema::{Method, Spec, Type};
 use util::*;
 
 use crate::naming::get_field_name;
-
+#[allow(dead_code)]
 pub(crate) mod naming;
 pub(crate) mod schema;
 pub(crate) mod util;
