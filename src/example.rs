@@ -29,7 +29,7 @@ pub struct Location {
 }
 
 impl Bot {
-    pub async fn get_user_profile_photos(
+    pub async fn ex_get_user_profile_photos(
         &self,
         user_id: i64,
         offset: i64,
@@ -45,7 +45,7 @@ impl Bot {
         Ok(resp)
     }
 
-    pub async fn set_chat_photo(&self, chat_id: i64, photo: InputFile) -> Result<bool> {
+    pub async fn ex_set_chat_photo(&self, chat_id: i64, photo: InputFile) -> Result<bool> {
         let form = [("chat_id", chat_id)];
         let data = match photo {
             InputFile::Bytes(bytes) => Form::new().part("photo", Part::bytes(bytes)),

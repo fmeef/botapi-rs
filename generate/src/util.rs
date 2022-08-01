@@ -1,4 +1,7 @@
-use crate::{naming::get_type_name_str, ARRAY_OF, MULTITYPE_ENUM_PREFIX};
+use crate::{
+    naming::{get_field_name, get_type_name_str},
+    ARRAY_OF, MULTITYPE_ENUM_PREFIX,
+};
 use std::collections::HashSet;
 
 use crate::schema::{Field, Spec, Type};
@@ -20,12 +23,11 @@ where
 
 pub(crate) fn field_iter_str<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where
-    F: FnMut(&'a str) -> R,
-    F: 'a,
+    F: FnMut(String) -> R + 'a,
 {
     t.fields
         .iter()
-        .flat_map(|v| v.iter().map(|f| f.name.as_str()))
+        .flat_map(|v| v.iter().map(|f| get_field_name(f)))
         .map(func)
 }
 

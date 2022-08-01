@@ -4,10 +4,12 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
-use naming::get_type_name_str;
+use naming::{get_method_name, get_type_name_str};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use schema::{Method, Spec, Type};
 use util::*;
+
+use crate::naming::get_field_name;
 
 pub(crate) mod naming;
 pub(crate) mod schema;
@@ -29,7 +31,6 @@ pub struct GenerateMethods<'a> {
 
 static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
-static MEMBER_PREFIX: &str = "tg_";
 static INPUT_FILE: &str = "InputFile";
 
 impl<'a> GenerateTypes<'a> {
@@ -208,9 +209,8 @@ impl<'a> GenerateTypes<'a> {
             .get_type(traitname)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", traitname.as_ref());
-        let fieldnames =
-            field_iter_str(&supertype, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let returnnames = field_iter_str(&supertype, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let fieldnames = field_iter_str(&supertype, |v| format_ident!("get_{}", v));
+        let returnnames = field_iter_str(&supertype, |v| format_ident!("{}", v));
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
         let fieldtypes = field_iter(&supertype, |v| choose_type(&self.spec, v, &supertype).ok());
         let comments = field_iter(&supertype, |v| v.description.into_comment());
@@ -239,8 +239,8 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
 
         let typename = format_ident!("{}", t.name);
-        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
-        let returnnames = field_iter_str(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
+        let returnnames = field_iter_str(&t, |v| format_ident!("{}", v));
 
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
@@ -269,7 +269,7 @@ impl<'a> GenerateTypes<'a> {
 
     fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
-        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}{}", MEMBER_PREFIX, v));
+        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
 
         let comments = field_iter(&t, |v| v.description.into_comment());
@@ -301,7 +301,7 @@ impl<'a> GenerateTypes<'a> {
             .get_type(name)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", t.name);
-        let fieldnames = field_iter_str(&t, |v| format_ident!("{}{}", MEMBER_PREFIX, v));
+        let fieldnames = field_iter_str(&t, |v| format_ident!("{}", v));
         let serdenames = field_iter_str(&t, |v| v);
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
@@ -352,11 +352,13 @@ impl<'a> GenerateMethods<'a> {
     }
 
     fn generate_urlencoding_struct(&self, method: &Method) -> Result<TokenStream> {
-        let structname = format_ident!("{}_opts", method.name);
+        let structname = get_type_name_str(&method.name);
+        let structname = format_ident!("{}Opts", structname);
         let res = if let Some(fields) = &method.fields {
             let typenames = fields
                 .iter()
-                .map(|f| format_ident!("tg_{}", f.name.as_str()));
+                .map(|f| get_field_name(f))
+                .map(|f| format_ident!("{}", f));
             let types = fields
                 .iter()
                 .filter_map(|f| self.choose_type(&f.types, !f.required).ok());
@@ -379,14 +381,17 @@ impl<'a> GenerateMethods<'a> {
     }
 
     fn instantiate_urlencoding_struct(&self, method: &Method) -> Result<TokenStream> {
-        let structname = format_ident!("{}_opts", method.name);
+        let structname = get_type_name_str(&method.name);
+        let structname = format_ident!("{}Opts", structname);
         let res = if let Some(fields) = &method.fields {
             let typenames = fields
                 .iter()
-                .map(|f| format_ident!("tg_{}", f.name.as_str()));
+                .map(|f| get_field_name(f))
+                .map(|f| format_ident!("{}", f));
             let vars = fields
                 .iter()
-                .map(|f| format_ident!("tg_{}", f.name.as_str()));
+                .map(|f| get_field_name(f))
+                .map(|f| format_ident!("{}", f));
 
             quote! {
                 #structname {
@@ -406,14 +411,16 @@ impl<'a> GenerateMethods<'a> {
 
     fn generate_method(&self, method: &Method) -> Result<TokenStream> {
         let endpoint = &method.name;
-        let fn_name = format_ident!("{}", method.name);
+        let name = get_method_name(method);
+        let fn_name = format_ident!("{}", name);
         let returntype = self.choose_type(method.returns.as_slice(), false)?;
         let typenames = method
             .fields
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|f| format_ident!("tg_{}", f.name));
+            .map(|f| get_field_name(f))
+            .map(|f| format_ident!("{}", f));
         let types = method
             .fields
             .as_deref()
