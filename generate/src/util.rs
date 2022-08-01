@@ -1,4 +1,4 @@
-use crate::{ARRAY_OF, MULTITYPE_ENUM_PREFIX};
+use crate::{naming::get_type_name_str, ARRAY_OF, MULTITYPE_ENUM_PREFIX};
 use std::collections::HashSet;
 
 use crate::schema::{Field, Spec, Type};
@@ -33,7 +33,8 @@ pub(crate) fn get_multitype_name<T>(fieldname: &T) -> String
 where
     T: AsRef<str>,
 {
-    format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname.as_ref())
+    let fieldname = get_type_name_str(fieldname);
+    format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname)
 }
 
 pub(crate) fn is_array<T>(name: &T) -> usize

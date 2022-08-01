@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bot::{Bot, Response},
-    gen_types::{Echat_id, InputFile, UserProfilePhotos},
+    gen_types::*,
 };
 
 enum TgTypes {
@@ -45,7 +45,7 @@ impl Bot {
         Ok(resp)
     }
 
-    pub async fn set_chat_photo(&self, chat_id: Echat_id, photo: InputFile) -> Result<bool> {
+    pub async fn set_chat_photo(&self, chat_id: i64, photo: InputFile) -> Result<bool> {
         let form = [("chat_id", chat_id)];
         let data = match photo {
             InputFile::Bytes(bytes) => Form::new().part("photo", Part::bytes(bytes)),

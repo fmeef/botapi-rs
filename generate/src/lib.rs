@@ -1,14 +1,15 @@
 use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, RwLock},
 };
 
 use anyhow::{anyhow, Result};
+use naming::get_type_name_str;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use schema::{Method, Spec, Type};
 use util::*;
 
+pub(crate) mod naming;
 pub(crate) mod schema;
 pub(crate) mod util;
 
@@ -103,17 +104,11 @@ impl<'a> GenerateTypes<'a> {
                 for field in fields {
                     if field.types.len() > 1 {
                         if let Some(name) = self.get_multitype_name(&field.name, &field.types) {
-                            let typeiter: Vec<String> =
-                                field.types.iter().map(|t| type_mapper(&t)).collect();
-                            let t = self.generate_enum_str(typeiter.as_slice(), &name)?;
+                            let t = self.generate_enum_str(&field.types, &name)?;
                             tokens.extend(t);
 
                             if !is_json(&field) {
-                                let typeiter = field
-                                    .types
-                                    .iter()
-                                    .map(|t| type_mapper(&t))
-                                    .map(|t| name_to_uppercase(&t));
+                                let typeiter = field.types.iter().map(|t| get_type_name_str(t));
                                 let t = generate_fmt_display_enum(&name, typeiter);
                                 tokens.extend(t);
                             }
@@ -128,17 +123,11 @@ impl<'a> GenerateTypes<'a> {
                 for field in fields {
                     if field.types.len() > 1 {
                         if let Some(name) = self.get_multitype_name(&field.name, &field.types) {
-                            let typeiter: Vec<String> =
-                                field.types.iter().map(|t| type_mapper(&t)).collect();
-                            let t = self.generate_enum_str(typeiter.as_slice(), &name)?;
+                            let t = self.generate_enum_str(&field.types, &name)?;
                             tokens.extend(t);
 
                             if !is_json(&field) {
-                                let typeiter = field
-                                    .types
-                                    .iter()
-                                    .map(|t| type_mapper(&t))
-                                    .map(|t| name_to_uppercase(&t));
+                                let typeiter = field.types.iter().map(|t| get_type_name_str(t));
                                 let t = generate_fmt_display_enum(&name, typeiter);
                                 tokens.extend(t);
                             }
@@ -161,8 +150,8 @@ impl<'a> GenerateTypes<'a> {
             .expect("failed to lock write access");
         let key = types
             .iter()
-            .map(|t| type_without_array(t))
-            .collect::<Vec<&str>>()
+            .map(|t| get_type_name_str(t))
+            .collect::<Vec<String>>()
             .join("");
         if let None = multitypes.get(&key) {
             let name = get_multitype_name(field_name);
@@ -180,12 +169,12 @@ impl<'a> GenerateTypes<'a> {
     {
         let names_iter = types
             .iter()
-            .map(|v| type_without_array(v))
-            .map(|v| name_to_uppercase(&v))
+            .map(|v| get_type_name_str(v))
             .map(|v| format_ident!("{}", v));
         let types_iter = types
             .iter()
             .map(|v| type_without_array(v))
+            .map(|v| type_mapper(&v))
             .map(|v| format_ident!("{}", v));
         let name = format_ident!("{}", name.as_ref());
         let e = quote! {
@@ -505,8 +494,8 @@ impl<'a> GenerateMethods<'a> {
     fn get_multitype_by_vec(&'a self, types: &[String]) -> Result<String> {
         let key = types
             .iter()
-            .map(|t| type_without_array(t))
-            .collect::<Vec<&str>>()
+            .map(|t| get_type_name_str(t))
+            .collect::<Vec<String>>()
             .join("");
         let multitypes = self.multitypes.read().expect("failed to lock read access");
         let res = multitypes
