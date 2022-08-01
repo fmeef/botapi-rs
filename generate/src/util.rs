@@ -195,3 +195,19 @@ impl<'a> CycleChecker<'a> {
         parent.name == name.as_ref()
     }
 }
+
+pub(crate) trait IntoComment {
+    fn into_comment(&self) -> TokenStream;
+}
+
+impl<T> IntoComment for T
+where
+    T: AsRef<str>,
+{
+    fn into_comment(&self) -> TokenStream {
+        let comment = self.as_ref();
+        quote! {
+            #[doc = #comment ]
+        }
+    }
+}
