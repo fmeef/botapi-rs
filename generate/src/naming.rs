@@ -17,18 +17,12 @@ where
     T: AsRef<str>,
 {
     let t = type_without_array(t);
-    match t {
-        "Integer" => "i64".to_owned(),
-        "Boolean" => "bool".to_owned(),
-        "Float" => "f64".to_owned(),
-        _ => {
-            let t = t.to_case(Case::UpperCamel);
-            if RESERVED_WORDS.contains(&t.as_str()) {
-                format!("Tg{}", t)
-            } else {
-                t
-            }
-        }
+    let t = type_mapper(&t);
+    let t = t.to_case(Case::UpperCamel);
+    if RESERVED_WORDS.contains(&t.as_str()) {
+        format!("Tg{}", t)
+    } else {
+        t
     }
 }
 
