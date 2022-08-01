@@ -1,4 +1,4 @@
-use crate::{ARRAY_OF, MULTITYPE_ENUM_PREFIX};
+use crate::{schema::Method, ARRAY_OF, MULTITYPE_ENUM_PREFIX};
 use std::collections::HashSet;
 
 use crate::schema::{Field, Spec, Type};
@@ -36,11 +36,114 @@ where
     format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname.as_ref())
 }
 
-fn is_array<T>(name: &T) -> usize
+pub(crate) fn is_array<T>(name: &T) -> usize
 where
     T: AsRef<str>,
 {
     name.as_ref().matches(ARRAY_OF).count()
+}
+
+pub(crate) fn choose_return_type(method: &Method) -> Result<TokenStream> {
+    let mytype = &method.returns[0];
+    let nested = is_array(&mytype);
+    let t = if nested > 0 {
+        let fm = &mytype[ARRAY_OF.len() * nested..];
+        let res = type_mapper(&fm);
+        let res = format_ident!("{}", res);
+        let mut quote = quote!();
+        for _ in 0..nested {
+            let vec = quote! {
+                Vec<
+            };
+            quote.extend(vec);
+        }
+        quote.extend(quote! {
+            #res
+        });
+        for _ in 0..nested {
+            let vec = quote! {
+                >
+            };
+            quote.extend(vec);
+        }
+        quote
+    } else {
+        let mytype = type_mapper(&mytype);
+        let t = format_ident!("{}", mytype);
+        quote!(#t)
+    };
+    Ok(t)
+}
+
+pub(crate) fn name_to_uppercase<T>(name: &T) -> String
+where
+    T: AsRef<str>,
+{
+    name.as_ref()[0..1].to_uppercase() + &name.as_ref()[1..]
+}
+
+pub(crate) fn generate_fmt_display_enum<'a, T, V, U>(name: &T, types: V) -> TokenStream
+where
+    T: AsRef<str>,
+    V: Iterator<Item = U>,
+    U: AsRef<str> + 'a,
+{
+    let types = types.map(|v| format_ident!("{}", v.as_ref()));
+    let name = format_ident!("{}", name.as_ref());
+
+    quote! {
+        impl fmt::Display for #name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                let v = match self {
+                   #(
+                       #name::#types(thing) => thing.to_string()
+                   ),*
+                };
+                write!(f, "{}", v)?;
+                Ok(())
+            }
+        }
+    }
+}
+
+pub(crate) fn choose_type_noparent(field: &Field) -> Result<TokenStream> {
+    let mytype = &field.types[0];
+    let nested = is_array(&mytype);
+    let t = if nested > 0 {
+        let fm = if field.types.len() > 1 {
+            get_multitype_name(&field.name)
+        } else {
+            mytype[ARRAY_OF.len() * nested..].to_owned()
+        };
+        let res = type_mapper(&fm);
+        let res = format_ident!("{}", res);
+        let mut quote = quote!();
+        for _ in 0..nested {
+            let vec = quote! {
+                Vec<
+            };
+            quote.extend(vec);
+        }
+        quote.extend(quote! {
+            #res
+        });
+        for _ in 0..nested {
+            let vec = quote! {
+                >
+            };
+            quote.extend(vec);
+        }
+        quote
+    } else {
+        let mytype = if field.types.len() > 1 {
+            get_multitype_name(&field.name)
+        } else {
+            type_mapper(&mytype)
+        };
+        let t = format_ident!("{}", mytype);
+        quote!(#t)
+    };
+    Ok(is_optional(field, t))
 }
 
 pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<TokenStream> {
@@ -96,17 +199,28 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
     Ok(is_optional(field, t))
 }
 
-fn is_optional<T>(field: &Field, tokenstram: T) -> TokenStream
+pub(crate) fn is_optional<T>(field: &Field, tokenstram: T) -> TokenStream
 where
     T: ToTokens,
 {
-    if field.description.starts_with("Optional") {
+    if !field.required {
         quote! {
             Option<#tokenstram>
         }
     } else {
         tokenstram.to_token_stream()
     }
+}
+
+pub(crate) fn is_json(field: &Field) -> bool {
+    for t in &field.types {
+        for compare in ["Integer", "Boolean", "Float"] {
+            if t.ends_with(compare) && !t.starts_with("Array of") {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 pub(crate) fn type_mapper<T>(field: &T) -> String

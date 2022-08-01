@@ -1,22 +1,30 @@
-use std::{cell::RefCell, collections::HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    sync::{Arc, RwLock},
+};
 
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
-use schema::{Spec, Type};
+use schema::{Method, Spec, Type};
 use util::*;
 
 pub(crate) mod schema;
 pub(crate) mod util;
 
-pub struct Generate(Spec);
+pub struct Generate {
+    spec: Spec,
+    multitypes: Arc<RwLock<HashMap<String, String>>>,
+}
 
 pub struct GenerateTypes<'a> {
     spec: &'a Spec,
-    multitypes: RefCell<HashSet<String>>,
+    multitypes: Arc<RwLock<HashMap<String, String>>>,
 }
-pub struct GenerateMethods<'a>(&'a Spec);
-
-pub static TELEGRAM_API: &str = "https://api.telegram.org";
+pub struct GenerateMethods<'a> {
+    spec: &'a Spec,
+    multitypes: Arc<RwLock<HashMap<String, String>>>,
+}
 
 static MULTITYPE_ENUM_PREFIX: &str = "E";
 static ARRAY_OF: &str = "Array of ";
@@ -38,8 +46,12 @@ impl<'a> GenerateTypes<'a> {
                 } else {
                     let vec = Vec::new();
                     let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
-                    let subtypes = subtypes.iter().filter_map(|v| self.spec.get_type(v));
-                    self.generate_enum(subtypes, &v.name).ok()
+                    let subtypes = subtypes
+                        .iter()
+                        .filter_map(|v| self.spec.get_type(v))
+                        .map(|t| t.name.as_str())
+                        .collect::<Vec<&str>>();
+                    self.generate_enum_str(subtypes.as_slice(), &v.name).ok()
                 }
             }
         });
@@ -55,7 +67,15 @@ impl<'a> GenerateTypes<'a> {
             .values()
             .filter_map(|v| self.generate_impl(&v.name).ok());
         let typeenums = self.generate_multitype_enums()?;
-        let enums = self.generate_enum(self.spec.types.values(), &"GlobalTypes")?;
+        let enums = self.generate_enum_str(
+            self.spec
+                .types
+                .values()
+                .map(|v| v.name.as_str())
+                .collect::<Vec<&str>>()
+                .as_slice(),
+            &"GlobalTypes",
+        )?;
         let uses = self.generate_use()?;
         let res = quote! {
             #uses
@@ -71,6 +91,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_use(&self) -> Result<TokenStream> {
         Ok(quote! {
             use serde::{Deserialize, Serialize};
+            use std::fmt;
         })
     }
 
@@ -86,6 +107,16 @@ impl<'a> GenerateTypes<'a> {
                                 field.types.iter().map(|t| type_mapper(&t)).collect();
                             let t = self.generate_enum_str(typeiter.as_slice(), &name)?;
                             tokens.extend(t);
+
+                            if !is_json(&field) {
+                                let typeiter = field
+                                    .types
+                                    .iter()
+                                    .map(|t| type_mapper(&t))
+                                    .map(|t| name_to_uppercase(&t));
+                                let t = generate_fmt_display_enum(&name, typeiter);
+                                tokens.extend(t);
+                            }
                         }
                     }
                 }
@@ -99,11 +130,14 @@ impl<'a> GenerateTypes<'a> {
     where
         T: AsRef<str>,
     {
-        let mut multitypes = self.multitypes.borrow_mut();
+        let mut multitypes = self
+            .multitypes
+            .write()
+            .expect("failed to lock write access");
         let key = types.join("");
         if let None = multitypes.get(&key) {
             let name = get_multitype_name(field_name);
-            multitypes.insert(key);
+            multitypes.insert(key, name.clone());
             Some(name)
         } else {
             None
@@ -117,7 +151,7 @@ impl<'a> GenerateTypes<'a> {
     {
         let names_iter = types
             .iter()
-            .map(|v| v.as_ref()[0..1].to_uppercase() + &v.as_ref()[1..])
+            .map(|v| name_to_uppercase(v))
             .map(|v| format_ident!("{}", v));
         let types_iter = types.iter().map(|v| format_ident!("{}", v.as_ref()));
         let name = format_ident!("{}", name.as_ref());
@@ -133,28 +167,8 @@ impl<'a> GenerateTypes<'a> {
         Ok(e)
     }
 
-    fn generate_enum<T, N>(&'a self, types: T, name: &N) -> Result<TokenStream>
-    where
-        T: Iterator<Item = &'a Type>,
-        N: AsRef<str>,
-    {
-        let types = types.map(|v| format_ident!("{}", v.name));
-        let name = format_ident!("{}", name.as_ref());
-        let e = quote! {
-            #[derive(Serialize, Deserialize, Debug)]
-            #[serde(untagged)]
-            pub enum #name {
-                #(
-                    #types(#types)
-                ),*
-            }
-        };
-        Ok(e)
-    }
-
     fn generate_inputfile_enum(&self) -> TokenStream {
         let input_file = format_ident!("{}", INPUT_FILE);
-
         quote! {
             #[derive(Serialize, Deserialize, Debug)]
             pub enum #input_file {
@@ -287,19 +301,25 @@ impl<'a> GenerateTypes<'a> {
 
 impl Generate {
     pub fn new<T: AsRef<str>>(json: T) -> Result<Generate> {
-        Ok(Generate(serde_json::from_str(json.as_ref())?))
+        Ok(Generate {
+            spec: serde_json::from_str(json.as_ref())?,
+            multitypes: Arc::new(RwLock::new(HashMap::new())),
+        })
     }
 
     pub fn generate_types(&self) -> Result<String> {
         let generate_types = GenerateTypes {
-            spec: &self.0,
-            multitypes: RefCell::new(HashSet::new()),
+            spec: &self.spec,
+            multitypes: Arc::clone(&self.multitypes),
         };
         generate_types.generate_types()
     }
 
     pub fn generate_methods(&self) -> Result<String> {
-        let generate_methods = GenerateMethods(&self.0);
+        let generate_methods = GenerateMethods {
+            spec: &self.spec,
+            multitypes: Arc::clone(&self.multitypes),
+        };
         generate_methods.generate_methods()
     }
 }
@@ -309,8 +329,150 @@ impl<'a> GenerateMethods<'a> {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
 
+    fn generate_urlencoding(&self, method: &Method) -> TokenStream {
+        if let Some(fields) = method.fields.as_ref() {
+            let field_names = fields.iter().map(|f| f.name.as_str());
+            let field_idents = fields.iter().map(|f| {
+                if is_json(f) {
+                    let name = format_ident!("tg_{}", f.name);
+                    quote! {
+                        serde_json::to_string(&#name)?
+                    }
+                } else if !f.required {
+                    quote!()
+                } else {
+                    let name = format_ident!("tg_{}", f.name);
+                    quote! {
+                        #name.to_string()
+                    }
+                }
+            });
+            quote! {
+                [
+                    #(
+                        ( #field_names, #field_idents )
+                    ),*
+                ]
+            }
+        } else {
+            quote! {
+                HashMap::<String, String>::new();
+            }
+        }
+    }
+
+    fn generate_method(&self, method: &Method) -> Result<TokenStream> {
+        let endpoint = &method.name;
+        let urlencoding = self.generate_urlencoding(method);
+        let fn_name = format_ident!("{}", method.name);
+        let returntype = self.choose_type(method.returns.as_slice(), false)?;
+        let typenames = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|f| format_ident!("tg_{}", f.name));
+        let types = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|f| self.choose_type(&f.types, !f.required).ok());
+
+        let res = quote! {
+            pub async fn #fn_name (&self, #( #typenames: #types ),*) -> Result<#returntype> {
+                let form = #urlencoding;
+                let resp = self.post(#endpoint, form).await?;
+                let resp = serde_json::from_value(resp.result)?;
+                Ok(resp)
+            }
+        };
+
+        Ok(res)
+    }
+
+    fn choose_type(&self, t: &[String], optional: bool) -> Result<TokenStream> {
+        let mytype = if t.len() > 1 {
+            self.get_multitype_by_vec(t)?.to_owned()
+        } else {
+            t[0].clone()
+        };
+
+        let nested = is_array(&mytype);
+
+        let res = if nested > 0 {
+            let fm = &mytype[ARRAY_OF.len() * nested..];
+            let res = type_mapper(&fm);
+            let res = format_ident!("{}", res);
+            let mut quote = quote!();
+            for _ in 0..nested {
+                let vec = quote! {
+                    Vec<
+                };
+                quote.extend(vec);
+            }
+            quote.extend(quote! {
+                #res
+            });
+            for _ in 0..nested {
+                let vec = quote! {
+                    >
+                };
+                quote.extend(vec);
+            }
+            quote
+        } else {
+            let mytype = type_mapper(&mytype);
+            let ret = format_ident!("{}", mytype);
+            quote!(#ret)
+        };
+        if optional {
+            Ok(quote! {
+                Option<#res>
+            })
+        } else {
+            Ok(res)
+        }
+    }
+
+    fn generate_use(&self) -> TokenStream {
+        quote! {
+           use anyhow::Result;
+           use reqwest::multipart::{Form, Part};
+           use serde::{Deserialize, Serialize};
+
+            use crate::{
+                bot::{Bot, Response},
+                gen_types::*,
+            };
+        }
+    }
+
+    fn get_multitype_by_vec(&'a self, types: &[String]) -> Result<String> {
+        let key = types.join("");
+        let multitypes = self.multitypes.read().expect("failed to lock read access");
+        let res = multitypes
+            .get(&key)
+            .ok_or_else(|| anyhow!("invalid multitype"))?;
+        Ok(res.to_owned())
+    }
+
     fn preamble(&self) -> Result<TokenStream> {
-        Ok(quote!())
+        let gen_use = self.generate_use();
+        let methods = self
+            .spec
+            .methods
+            .values()
+            .filter_map(|m| self.generate_method(&m).ok());
+        Ok(quote! {
+            #gen_use
+
+            impl Bot {
+                #(
+                    #methods
+                )*
+            }
+        })
     }
 }
 
