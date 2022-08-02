@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
-
-use crate::{schema::Type, INPUT_FILE};
+use crate::{schema::Type, MultiTypes, INPUT_FILE};
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
@@ -13,11 +8,11 @@ use crate::util::*;
 
 pub(crate) struct GenerateTypes<'a> {
     spec: &'a Spec,
-    multitypes: Arc<RwLock<HashMap<String, String>>>,
+    multitypes: MultiTypes,
 }
 
 impl<'a> GenerateTypes<'a> {
-    pub(crate) fn new(spec: &'a Spec, multitypes: Arc<RwLock<HashMap<String, String>>>) -> Self {
+    pub(crate) fn new(spec: &'a Spec, multitypes: MultiTypes) -> Self {
         Self {
             spec,
             multitypes: multitypes.clone(),

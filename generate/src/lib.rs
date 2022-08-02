@@ -13,6 +13,8 @@ pub(crate) mod schema;
 mod types;
 pub(crate) mod util;
 
+pub(crate) type MultiTypes = Arc<RwLock<HashMap<String, String>>>;
+
 pub struct Generate {
     spec: Spec,
     multitypes: Arc<RwLock<HashMap<String, String>>>,

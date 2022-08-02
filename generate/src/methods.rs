@@ -1,22 +1,18 @@
 use crate::schema::Spec;
-use crate::util::*;
 use crate::{naming::*, schema::Method};
+use crate::{util::*, MultiTypes};
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-};
 
 use crate::ARRAY_OF;
 
 pub(crate) struct GenerateMethods<'a> {
     spec: &'a Spec,
-    multitypes: Arc<RwLock<HashMap<String, String>>>,
+    multitypes: MultiTypes,
 }
 
 impl<'a> GenerateMethods<'a> {
-    pub(crate) fn new(spec: &'a Spec, multitypes: Arc<RwLock<HashMap<String, String>>>) -> Self {
+    pub(crate) fn new(spec: &'a Spec, multitypes: MultiTypes) -> Self {
         Self {
             spec,
             multitypes: multitypes.clone(),
