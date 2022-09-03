@@ -1,6 +1,6 @@
 use crate::{
     naming::{get_field_name, get_type_name_str},
-    ARRAY_OF, MULTITYPE_ENUM_PREFIX,
+    ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX,
 };
 use std::collections::HashSet;
 
@@ -13,6 +13,14 @@ struct CycleChecker<'a> {
     visited: HashSet<&'a str>,
 }
 
+pub(crate) fn is_inputfile(field: &Field) -> bool {
+    is_inputfile_types(field.types.as_slice())
+}
+pub(crate) fn is_inputfile_types(field: &[String]) -> bool {
+    let inputfile = field.contains(&INPUT_FILE.to_owned());
+    let string = field.contains(&"String".to_owned());
+    inputfile && string && field.len() == 2
+}
 pub(crate) fn field_iter<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where
     F: FnMut(&Field) -> R,
@@ -31,12 +39,14 @@ where
         .map(func)
 }
 
-pub(crate) fn get_multitype_name<T>(fieldname: &T) -> String
-where
-    T: AsRef<str>,
-{
-    let fieldname = get_type_name_str(fieldname);
-    format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname)
+pub(crate) fn get_multitype_name(fieldname: &Field) -> String {
+    if is_inputfile(fieldname) {
+        INPUT_FILE.to_owned()
+    } else {
+        let fieldname = &fieldname.name;
+        let fieldname = get_type_name_str(&fieldname);
+        format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname)
+    }
 }
 
 pub(crate) fn is_array<T>(name: &T) -> usize
@@ -84,10 +94,14 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
     let nested = is_array(&mytype);
     let mut checker = CycleChecker::new(spec);
     let t = if nested > 0 {
-        let fm = if field.types.len() > 1 {
-            get_multitype_name(&field.name)
+        let fm = if is_inputfile(field) {
+            INPUT_FILE.to_owned()
         } else {
-            mytype[ARRAY_OF.len() * nested..].to_owned()
+            if field.types.len() > 1 {
+                get_multitype_name(&field)
+            } else {
+                mytype[ARRAY_OF.len() * nested..].to_owned()
+            }
         };
         let res = type_mapper(&fm);
         let res = format_ident!("{}", res);
@@ -116,7 +130,7 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
         quote
     } else {
         let mytype = if field.types.len() > 1 {
-            get_multitype_name(&field.name)
+            get_multitype_name(&field)
         } else {
             type_mapper(&mytype)
         };

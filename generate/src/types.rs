@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::naming::*;
-use crate::schema::Spec;
+use crate::schema::{Field, Spec};
 use crate::util::*;
 
 pub(crate) struct GenerateTypes<'a> {
@@ -81,6 +81,16 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
+    #[allow(dead_code)]
+    fn generate_media_params_getter(&self, t: &Type) -> Result<TokenStream> {
+        if t.is_media() {
+            let q = quote! {};
+            Ok(q)
+        } else {
+            Ok(quote!())
+        }
+    }
+
     fn generate_multitype_enums(&self) -> Result<TokenStream> {
         let mut tokens = quote!();
 
@@ -88,14 +98,16 @@ impl<'a> GenerateTypes<'a> {
             if let Some(fields) = jsontype.fields.as_ref() {
                 for field in fields {
                     if field.types.len() > 1 {
-                        if let Some(name) = self.get_multitype_name(&field.name, &field.types) {
-                            let t = self.generate_enum_str(&field.types, &name)?;
-                            tokens.extend(t);
-
-                            if !is_json(&field) {
-                                let typeiter = field.types.iter().map(|t| get_type_name_str(t));
-                                let t = generate_fmt_display_enum(&name, typeiter);
+                        if !is_inputfile(&field) {
+                            if let Some(name) = self.get_multitype_name(&field) {
+                                let t = self.generate_enum_str(&field.types, &name)?;
                                 tokens.extend(t);
+
+                                if !is_json(&field) {
+                                    let typeiter = field.types.iter().map(|t| get_type_name_str(t));
+                                    let t = generate_fmt_display_enum(&name, typeiter);
+                                    tokens.extend(t);
+                                }
                             }
                         }
                     }
@@ -107,14 +119,16 @@ impl<'a> GenerateTypes<'a> {
             if let Some(fields) = method.fields.as_ref() {
                 for field in fields {
                     if field.types.len() > 1 {
-                        if let Some(name) = self.get_multitype_name(&field.name, &field.types) {
-                            let t = self.generate_enum_str(&field.types, &name)?;
-                            tokens.extend(t);
-
-                            if !is_json(&field) {
-                                let typeiter = field.types.iter().map(|t| get_type_name_str(t));
-                                let t = generate_fmt_display_enum(&name, typeiter);
+                        if !is_inputfile(&field) {
+                            if let Some(name) = self.get_multitype_name(&field) {
+                                let t = self.generate_enum_str(&field.types, &name)?;
                                 tokens.extend(t);
+
+                                if !is_json(&field) {
+                                    let typeiter = field.types.iter().map(|t| get_type_name_str(t));
+                                    let t = generate_fmt_display_enum(&name, typeiter);
+                                    tokens.extend(t);
+                                }
                             }
                         }
                     }
@@ -125,25 +139,27 @@ impl<'a> GenerateTypes<'a> {
         Ok(tokens)
     }
 
-    fn get_multitype_name<T>(&self, field_name: &T, types: &[String]) -> Option<String>
-    where
-        T: AsRef<str>,
-    {
+    fn get_multitype_name(&self, field_name: &Field) -> Option<String> {
         let mut multitypes = self
             .multitypes
             .write()
             .expect("failed to lock write access");
-        let key = types
+        let key = field_name
+            .types
             .iter()
             .map(|t| get_type_name_str(t))
             .collect::<Vec<String>>()
             .join("");
-        if let None = multitypes.get(&key) {
-            let name = get_multitype_name(field_name);
-            multitypes.insert(key, name.clone());
-            Some(name)
+        if is_inputfile(field_name) {
+            Some(INPUT_FILE.to_owned())
         } else {
-            None
+            if let None = multitypes.get(&key) {
+                let name = get_multitype_name(field_name);
+                multitypes.insert(key, name.clone());
+                Some(name)
+            } else {
+                None
+            }
         }
     }
 
@@ -286,7 +302,10 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", t.name);
         let fieldnames = field_iter_str(&t, |v| format_ident!("{}", v));
-        let serdenames = field_iter_str(&t, |v| v);
+        let serdenames = t
+            .fields
+            .iter()
+            .flat_map(|f| f.iter().map(|v| v.name.as_str()));
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
         let struct_comment = t.description.concat().into_comment();

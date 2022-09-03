@@ -21,6 +21,45 @@ pub struct Location {
     proximity_alert_radius: Option<i64>,
 }
 
+enum TestInputFile {
+    Bytes(Vec<u8>),
+}
+
+#[doc = "Represents a photo to be sent."]
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InputMediaPhoto {
+    #[doc = "Type of the result, must be photo"]
+    #[serde(rename = "type")]
+    tg_type: String,
+    #[doc = "File to send. Pass a file_id to send a file that exists on the Telegram servers (recommended), pass an HTTP URL for Telegram to get a file from the Internet, or pass \"attach://<file_attach_name>\" to upload a new one using multipart/form-data under <file_attach_name> name. More information on Sending Files: https://core.telegram.org/bots/api#sending-files"]
+    #[serde(rename = "media")]
+    media: String,
+    #[doc = "Optional. Caption of the photo to be sent, 0-1024 characters after entities parsing"]
+    #[serde(rename = "caption")]
+    caption: Option<String>,
+    #[doc = "Optional. Mode for parsing entities in the photo caption. See formatting options for more details."]
+    #[serde(rename = "parse_mode")]
+    parse_mode: Option<String>,
+    #[doc = "Optional. List of special entities that appear in the caption, which can be specified instead of parse_mode"]
+    #[serde(rename = "caption_entities")]
+    caption_entities: Option<Vec<MessageEntity>>,
+}
+
+impl InputMediaPhoto {
+    fn get_params<T>(self, name: &T, data: &mut Form) -> Result<serde_json::Value>
+    where
+        T: AsRef<str>,
+    {
+        let name = format_args!("attach://{}", name.as_ref());
+        /*
+             match self {
+                 TestInputFile::Bytes(bytes) => {}
+             }
+        */
+        todo!()
+    }
+}
+
 impl Bot {
     pub async fn ex_get_user_profile_photos(
         &self,

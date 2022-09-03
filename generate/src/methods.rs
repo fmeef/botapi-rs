@@ -1,6 +1,6 @@
 use crate::schema::Spec;
 use crate::{naming::*, schema::Method};
-use crate::{util::*, MultiTypes};
+use crate::{util::*, MultiTypes, INPUT_FILE};
 use anyhow::{anyhow, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
@@ -170,16 +170,20 @@ impl<'a> GenerateMethods<'a> {
     }
 
     fn get_multitype_by_vec(&'a self, types: &[String]) -> Result<String> {
-        let key = types
-            .iter()
-            .map(|t| get_type_name_str(t))
-            .collect::<Vec<String>>()
-            .join("");
-        let multitypes = self.multitypes.read().expect("failed to lock read access");
-        let res = multitypes
-            .get(&key)
-            .ok_or_else(|| anyhow!("invalid multitype {}", key))?;
-        Ok(res.to_owned())
+        if is_inputfile_types(types) {
+            Ok(INPUT_FILE.to_owned())
+        } else {
+            let key = types
+                .iter()
+                .map(|t| get_type_name_str(t))
+                .collect::<Vec<String>>()
+                .join("");
+            let multitypes = self.multitypes.read().expect("failed to lock read access");
+            let res = multitypes
+                .get(&key)
+                .ok_or_else(|| anyhow!("invalid multitype {}", key))?;
+            Ok(res.to_owned())
+        }
     }
 
     fn preamble(&self) -> Result<TokenStream> {

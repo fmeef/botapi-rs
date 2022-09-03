@@ -40,6 +40,19 @@ pub(crate) struct Field {
     pub(crate) required: bool,
     pub(crate) description: String,
 }
+
+impl Type {
+    pub(crate) fn is_media(&self) -> bool {
+        self.subtype_of
+            .as_ref()
+            .map(|v| {
+                v.iter()
+                    .fold(false, |b, s| if s == "InputMedia" { true } else { b })
+            })
+            .unwrap_or(false)
+    }
+}
+
 #[allow(dead_code)]
 impl Spec {
     pub(crate) fn get_type<'a, T: AsRef<str>>(&'a self, name: &T) -> Option<&'a Type> {
