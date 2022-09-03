@@ -195,7 +195,8 @@ impl<'a> GenerateTypes<'a> {
         quote! {
             #[derive(Serialize, Deserialize, Debug)]
             pub enum #input_file {
-                Bytes(Vec<u8>)
+                Bytes(Vec<u8>),
+                String(String)
             }
         }
     }

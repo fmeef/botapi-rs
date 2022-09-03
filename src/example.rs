@@ -81,6 +81,7 @@ impl Bot {
         let form = [("chat_id", chat_id)];
         let data = match photo {
             InputFile::Bytes(bytes) => Form::new().part("photo", Part::bytes(bytes)),
+            InputFile::String(string) => Form::new().part("photo", Part::text(string)),
         };
         let resp = self.post_data("setChatPhoto", form, data).await?;
         let resp = serde_json::from_value(resp.result)?;
