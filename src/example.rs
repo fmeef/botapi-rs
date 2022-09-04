@@ -70,12 +70,15 @@ impl InputMediaPhoto {
     fn get_params(self, data: Form) -> Result<(Form, serde_json::Value)> {
         let ser = serde_json::to_value(&self)?;
         let res = match self.media {
-            Some(InputFile::Bytes(FileBytes { name, bytes })) => {
+            Some(InputFile::Bytes(FileBytes {
+                name,
+                bytes: Some(bytes),
+            })) => {
                 let form = data.part(name, Part::bytes(bytes));
                 Ok(form)
             }
             Some(InputFile::String(string)) => Ok(data),
-            None => Err(anyhow!("cry")),
+            _ => Err(anyhow!("cry")),
         }?;
         Ok((res, ser))
     }
@@ -101,10 +104,12 @@ impl Bot {
     pub async fn ex_set_chat_photo(&self, chat_id: i64, photo: InputFile) -> Result<bool> {
         let form = [("chat_id", chat_id)];
         let data = match photo {
-            InputFile::Bytes(FileBytes { name, bytes }) => {
-                Form::new().part("photo", Part::bytes(bytes))
-            }
+            InputFile::Bytes(FileBytes {
+                name,
+                bytes: Some(bytes),
+            }) => Form::new().part("photo", Part::bytes(bytes)),
             InputFile::String(string) => Form::new().part("photo", Part::text(string)),
+            _ => panic!(),
         };
         let resp = self.post_data("setChatPhoto", form, data).await?;
         let resp = serde_json::from_value(resp.result)?;

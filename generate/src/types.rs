@@ -89,12 +89,12 @@ impl<'a> GenerateTypes<'a> {
                fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
                    let ser = serde_json::to_value(&self)?;
                    let res = match self.media {
-                       Some(InputFile::Bytes(FileBytes { name, bytes })) => {
+                       Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
                            let form = data.part(name, Part::bytes(bytes));
                            Ok(form)
                        }
                        Some(InputFile::String(_)) => Ok(data),
-                       None => Err(anyhow!("cry")),
+                       _ => Err(anyhow!("cry")),
                    }?;
                    Ok((res, ser))
                }
@@ -213,7 +213,7 @@ impl<'a> GenerateTypes<'a> {
                 #[serde(flatten)]
                 pub name: String,
                 #[serde(skip, default)]
-                pub bytes: Vec<u8>
+                pub bytes: Option<Vec<u8>>
             }
 
             #[derive(Serialize, Deserialize, Debug)]
