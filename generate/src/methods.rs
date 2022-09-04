@@ -30,9 +30,15 @@ impl<'a> GenerateMethods<'a> {
                 .iter()
                 .map(|f| get_field_name(f))
                 .map(|f| format_ident!("{}", f));
-            let types = fields
-                .iter()
-                .filter_map(|f| self.choose_type(&f.types, !f.required).ok());
+            let types = fields.iter().filter_map(|f| {
+                if is_json(&f) {
+                    Some(quote! {
+                        serde_json::Value
+                    })
+                } else {
+                    self.choose_type(&f.types, !f.required).ok()
+                }
+            });
             quote! {
                 #[derive(Serialize, Deserialize, Debug)]
                 struct #structname {
@@ -59,10 +65,17 @@ impl<'a> GenerateMethods<'a> {
                 .iter()
                 .map(|f| get_field_name(f))
                 .map(|f| format_ident!("{}", f));
-            let vars = fields
-                .iter()
-                .map(|f| get_field_name(f))
-                .map(|f| format_ident!("{}", f));
+            let vars = fields.iter().map(|f| {
+                let name = get_field_name(f);
+                let name = format_ident!("{}", name);
+                if is_json(&f) {
+                    quote! {
+                        serde_json::to_value(&#name)?
+                    }
+                } else {
+                    name.to_token_stream()
+                }
+            });
 
             quote! {
                 #structname {
