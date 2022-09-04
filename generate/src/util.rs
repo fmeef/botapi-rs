@@ -94,7 +94,7 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
     let nested = is_array(&mytype);
     let mut checker = CycleChecker::new(spec);
     let t = if nested > 0 {
-        let fm = if is_inputfile(field) {
+        let fm = if is_inputfile(field) || (parent.is_media() && field.name == "media") {
             INPUT_FILE.to_owned()
         } else {
             if field.types.len() > 1 {
@@ -129,10 +129,14 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
         }
         quote
     } else {
-        let mytype = if field.types.len() > 1 {
-            get_multitype_name(&field)
+        let mytype = if is_inputfile(field) || (parent.is_media() && field.name == "media") {
+            INPUT_FILE.to_owned()
         } else {
-            type_mapper(&mytype)
+            if field.types.len() > 1 {
+                get_multitype_name(field)
+            } else {
+                type_mapper(mytype)
+            }
         };
         let t = format_ident!("{}", mytype);
         if checker.check_parent(parent, &mytype) {
