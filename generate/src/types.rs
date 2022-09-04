@@ -80,7 +80,6 @@ impl<'a> GenerateTypes<'a> {
             use std::fmt;
         })
     }
-
     #[allow(dead_code)]
     fn generate_media_params_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
@@ -193,9 +192,18 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputfile_enum(&self) -> TokenStream {
         let input_file = format_ident!("{}", INPUT_FILE);
         quote! {
+
+            #[derive(Serialize, Deserialize, Debug)]
+            pub struct FileBytes {
+                #[serde(flatten)]
+                pub name: String,
+                #[serde(skip, default)]
+                pub bytes: Vec<u8>
+            }
+
             #[derive(Serialize, Deserialize, Debug)]
             pub enum #input_file {
-                Bytes(Vec<u8>),
+                Bytes(FileBytes),
                 String(String)
             }
         }

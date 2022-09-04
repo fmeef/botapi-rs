@@ -52,9 +52,10 @@ impl InputMediaPhoto {
     {
         let name = format_args!("attach://{}", name.as_ref());
         /*
-             match self {
-                 TestInputFile::Bytes(bytes) => {}
-             }
+        match self {
+            InputFile::Bytes(bytes) => {}
+            InputFile::String(string) => {}
+        }
         */
         todo!()
     }
@@ -80,7 +81,9 @@ impl Bot {
     pub async fn ex_set_chat_photo(&self, chat_id: i64, photo: InputFile) -> Result<bool> {
         let form = [("chat_id", chat_id)];
         let data = match photo {
-            InputFile::Bytes(bytes) => Form::new().part("photo", Part::bytes(bytes)),
+            InputFile::Bytes(FileBytes { name, bytes }) => {
+                Form::new().part("photo", Part::bytes(bytes))
+            }
             InputFile::String(string) => Form::new().part("photo", Part::text(string)),
         };
         let resp = self.post_data("setChatPhoto", form, data).await?;
