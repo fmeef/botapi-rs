@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use anyhow::anyhow;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 
@@ -21,10 +22,6 @@ pub struct Location {
     proximity_alert_radius: Option<i64>,
 }
 
-enum TestInputFile {
-    Bytes(Vec<u8>),
-}
-
 #[doc = "Represents a photo to be sent."]
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InputMediaPhoto {
@@ -33,7 +30,7 @@ pub struct InputMediaPhoto {
     tg_type: String,
     #[doc = "File to send. Pass a file_id to send a file that exists on the Telegram servers (recommended), pass an HTTP URL for Telegram to get a file from the Internet, or pass \"attach://<file_attach_name>\" to upload a new one using multipart/form-data under <file_attach_name> name. More information on Sending Files: https://core.telegram.org/bots/api#sending-files"]
     #[serde(rename = "media")]
-    media: String,
+    media: Option<InputFile>,
     #[doc = "Optional. Caption of the photo to be sent, 0-1024 characters after entities parsing"]
     #[serde(rename = "caption")]
     caption: Option<String>,
@@ -45,19 +42,42 @@ pub struct InputMediaPhoto {
     caption_entities: Option<Vec<MessageEntity>>,
 }
 
+#[allow(dead_code)]
 impl InputMediaPhoto {
-    fn get_params<T>(self, name: &T, data: &mut Form) -> Result<serde_json::Value>
-    where
-        T: AsRef<str>,
-    {
-        let name = format_args!("attach://{}", name.as_ref());
-        /*
-        match self {
-            InputFile::Bytes(bytes) => {}
-            InputFile::String(string) => {}
-        }
-        */
-        todo!()
+    #[doc = "Type of the result, must be photo"]
+    pub fn get_tg_type<'a>(&'a self) -> &'a String {
+        &self.tg_type
+    }
+    #[doc = "File to send. Pass a file_id to send a file that exists on the Telegram servers (recommended), pass an HTTP URL for Telegram to get a file from the Internet, or pass \"attach://<file_attach_name>\" to upload a new one using multipart/form-data under <file_attach_name> name. More information on Sending Files: https://core.telegram.org/bots/api#sending-files"]
+    pub fn get_media<'a>(&'a self) -> &'a Option<InputFile> {
+        &self.media
+    }
+    #[doc = "Optional. Caption of the photo to be sent, 0-1024 characters after entities parsing"]
+    pub fn get_caption<'a>(&'a self) -> &'a Option<String> {
+        &self.caption
+    }
+    #[doc = "Optional. Mode for parsing entities in the photo caption. See formatting options for more details."]
+    pub fn get_parse_mode<'a>(&'a self) -> &'a Option<String> {
+        &self.parse_mode
+    }
+    #[doc = "Optional. List of special entities that appear in the caption, which can be specified instead of parse_mode"]
+    pub fn get_caption_entities<'a>(&'a self) -> &'a Option<Vec<MessageEntity>> {
+        &self.caption_entities
+    }
+}
+
+impl InputMediaPhoto {
+    fn get_params(self, data: Form) -> Result<(Form, serde_json::Value)> {
+        let ser = serde_json::to_value(&self)?;
+        let res = match self.media {
+            Some(InputFile::Bytes(FileBytes { name, bytes })) => {
+                let form = data.part(name, Part::bytes(bytes));
+                Ok(form)
+            }
+            Some(InputFile::String(string)) => Ok(data),
+            None => Err(anyhow!("cry")),
+        }?;
+        Ok((res, ser))
     }
 }
 

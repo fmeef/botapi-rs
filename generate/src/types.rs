@@ -78,12 +78,27 @@ impl<'a> GenerateTypes<'a> {
         Ok(quote! {
             use serde::{Deserialize, Serialize};
             use std::fmt;
+            use anyhow::{anyhow, Result};
+            use reqwest::multipart::{Form, Part};
         })
     }
-    #[allow(dead_code)]
-    fn generate_media_params_getter(&self, t: &Type) -> Result<TokenStream> {
+
+    fn generate_form_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
-            let q = quote! {};
+            let q = quote! {
+               fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
+                   let ser = serde_json::to_value(&self)?;
+                   let res = match self.media {
+                       Some(InputFile::Bytes(FileBytes { name, bytes })) => {
+                           let form = data.part(name, Part::bytes(bytes));
+                           Ok(form)
+                       }
+                       Some(InputFile::String(_)) => Ok(data),
+                       None => Err(anyhow!("cry")),
+                   }?;
+                   Ok((res, ser))
+               }
+            };
             Ok(q)
         } else {
             Ok(quote!())
@@ -254,6 +269,7 @@ impl<'a> GenerateTypes<'a> {
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
 
+        let form_generator = self.generate_form_getter(&t)?;
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
             quote! {
@@ -269,6 +285,8 @@ impl<'a> GenerateTypes<'a> {
                             &self.#returnnames
                         }
                     )*
+
+                    #form_generator
                 }
 
             }

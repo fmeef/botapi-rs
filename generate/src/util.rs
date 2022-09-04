@@ -105,6 +105,12 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
         };
         let res = type_mapper(&fm);
         let res = format_ident!("{}", res);
+
+        let res = if parent.is_media() && field.name == "media" {
+            quote! { Option<#res> }
+        } else {
+            res.to_token_stream()
+        };
         let mut quote = quote!();
         for _ in 0..nested {
             let vec = quote! {
@@ -112,7 +118,7 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
             };
             quote.extend(vec);
         }
-        if checker.check_parent(parent, &fm) {
+        if checker.check_parent(parent, &fm) && !(parent.is_media() && field.name == "media") {
             quote.extend(quote! {
                 Box<#res>
             });
@@ -138,13 +144,18 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
                 type_mapper(mytype)
             }
         };
-        let t = format_ident!("{}", mytype);
-        if checker.check_parent(parent, &mytype) {
+        let res = format_ident!("{}", mytype);
+        let res = if parent.is_media() && field.name == "media" {
+            quote! { Option<#res> }
+        } else {
+            res.to_token_stream()
+        };
+        if checker.check_parent(parent, &mytype) && !(parent.is_media() && field.name == "media") {
             quote! {
-                Box<#t>
+                Box<#res>
             }
         } else {
-            quote!(#t)
+            quote!(#res)
         }
     };
     Ok(is_optional(field, t))
