@@ -83,7 +83,29 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
-    fn generate_form_getter(&self, t: &Type) -> Result<TokenStream> {
+    fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
+        if t.name == INPUT_FILE {
+            let q = quote! {
+               fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
+                   let ser = serde_json::to_value(&self)?;
+                   let res = match self {
+                       InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
+                           let form = data.part(name, Part::bytes(bytes));
+                           Ok(form)
+                       }
+                       InputFile::String(_) => Ok(data),
+                       _ => Err(anyhow!("cry")),
+                   }?;
+                   Ok((res, ser))
+               }
+            };
+            Ok(q)
+        } else {
+            Ok(quote!())
+        }
+    }
+
+    fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
                fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
@@ -211,9 +233,14 @@ impl<'a> GenerateTypes<'a> {
             #[derive(Serialize, Deserialize, Debug)]
             pub struct FileBytes {
                 #[serde(flatten)]
-                pub name: String,
+                pub(crate) name: String,
                 #[serde(skip, default)]
-                pub bytes: Option<Vec<u8>>
+                pub(crate) bytes: Option<Vec<u8>>
+            }
+
+            pub enum FileData {
+                Bytes(Vec<u8>),
+                String(String)
             }
 
             #[derive(Serialize, Deserialize, Debug)]
@@ -269,7 +296,8 @@ impl<'a> GenerateTypes<'a> {
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
 
-        let form_generator = self.generate_form_getter(&t)?;
+        let form_generator = self.generate_inputmedia_getter(&t)?;
+        let inputmedia_generator = self.generate_inputfile_getter(&t)?;
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
             quote! {
@@ -287,6 +315,7 @@ impl<'a> GenerateTypes<'a> {
                     )*
 
                     #form_generator
+                    #inputmedia_generator
                 }
 
             }

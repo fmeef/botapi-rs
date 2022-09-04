@@ -66,6 +66,17 @@ impl InputMediaPhoto {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct SendStickerOpts {
+    chat_id: EChatId,
+    sticker: serde_json::Value,
+    disable_notification: Option<bool>,
+    protect_content: Option<bool>,
+    reply_to_message_id: Option<i64>,
+    allow_sending_without_reply: Option<bool>,
+    reply_markup: serde_json::Value,
+}
+
 impl InputMediaPhoto {
     fn get_params(self, data: Form) -> Result<(Form, serde_json::Value)> {
         let ser = serde_json::to_value(&self)?;
@@ -85,33 +96,33 @@ impl InputMediaPhoto {
 }
 
 impl Bot {
-    pub async fn ex_get_user_profile_photos(
+    pub async fn send_sticker_ex(
         &self,
-        user_id: i64,
-        offset: i64,
-        limit: i64,
-    ) -> Result<UserProfilePhotos> {
-        let form = [
-            ("user_id", user_id.to_string()),
-            ("offset", offset.to_string()),
-            ("limit", limit.to_string()),
-        ];
-        let resp = self.post("getUserProfilePhotos", form).await?;
-        let resp = serde_json::from_value(resp.result)?;
-        Ok(resp)
-    }
-
-    pub async fn ex_set_chat_photo(&self, chat_id: i64, photo: InputFile) -> Result<bool> {
-        let form = [("chat_id", chat_id)];
-        let data = match photo {
-            InputFile::Bytes(FileBytes {
-                name,
+        chat_id: EChatId,
+        sticker: FileData,
+        disable_notification: Option<bool>,
+        protect_content: Option<bool>,
+        reply_to_message_id: Option<i64>,
+        allow_sending_without_reply: Option<bool>,
+        reply_markup: Option<EReplyMarkup>,
+    ) -> Result<Message> {
+        let inputfile = match sticker {
+            FileData::Bytes(bytes) => InputFile::Bytes(FileBytes {
+                name: "sticker".to_owned(),
                 bytes: Some(bytes),
-            }) => Form::new().part("photo", Part::bytes(bytes)),
-            InputFile::String(string) => Form::new().part("photo", Part::text(string)),
-            _ => panic!(),
+            }),
+            FileData::String(name) => InputFile::String(name),
         };
-        let resp = self.post_data("setChatPhoto", form, data).await?;
+        let form = SendStickerOpts {
+            chat_id: chat_id,
+            sticker: serde_json::to_value(&inputfile)?,
+            disable_notification: disable_notification,
+            protect_content: protect_content,
+            reply_to_message_id: reply_to_message_id,
+            allow_sending_without_reply: allow_sending_without_reply,
+            reply_markup: serde_json::to_value(&reply_markup)?,
+        };
+        let resp = self.post("sendSticker", form).await?;
         let resp = serde_json::from_value(resp.result)?;
         Ok(resp)
     }
