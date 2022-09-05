@@ -10,7 +10,7 @@ pub struct Response {
     pub ok: bool,
     pub result: Option<serde_json::Value>,
     pub error_code: i64,
-    pub description: String,
+    pub description: Option<String>,
     pub parameters: Option<ResponseParameters>,
 }
 
@@ -25,7 +25,7 @@ impl Default for Response {
             ok: true,
             result: None,
             error_code: 0,
-            description: "".into(),
+            description: None,
             parameters: None,
         }
     }

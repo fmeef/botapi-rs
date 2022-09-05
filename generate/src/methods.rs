@@ -187,8 +187,12 @@ impl<'a> GenerateMethods<'a> {
                 #file_handler
                 #instantiate
                 let resp = #post;
-                let resp = serde_json::from_value(resp.result.unwrap_or_default())?;
-                Ok(resp)
+                if resp.ok {
+                    let resp = serde_json::from_value(resp.result.unwrap_or_default())?;
+                    Ok(resp)
+                } else {
+                    Err(anyhow::anyhow!(resp.description.unwrap_or_default()))
+                }
             }
         };
 
