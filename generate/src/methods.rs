@@ -105,22 +105,24 @@ impl<'a> GenerateMethods<'a> {
             .map(|v| v.iter().filter(|f| is_inputfile(&f)))
         {
             let fieldlist = fieldlist.collect::<Vec<&Field>>();
-            let mut res = if fieldlist.len() > 0 {
+            let res = if fieldlist.len() > 0 {
                 quote! { let data = Form::new(); }
             } else {
                 quote!()
             };
-            fieldlist.iter().for_each(|field| {
+            let blocks = fieldlist.iter().map(|field| {
                 let name = field.name.as_str();
                 let typename = format_ident!("{}", name);
                 let json_name = format_ident!("{}_json", name);
-                let q = quote! {
+                quote! {
                     let inputfile = #typename.to_inputfile(#name.to_owned());
                     let (data, #json_name) = inputfile.to_form(data)?;
-                };
-                res.extend(q);
+                }
             });
-            res
+            quote! {
+                #res
+                #( #blocks )*
+            }
         } else {
             quote!()
         }
