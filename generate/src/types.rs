@@ -248,6 +248,18 @@ impl<'a> GenerateTypes<'a> {
                 Bytes(FileBytes),
                 String(String)
             }
+
+            impl FileData {
+                pub fn to_inputfile(self, name: String) -> #input_file {
+                     match self {
+                        FileData::Bytes(bytes) => #input_file::Bytes(FileBytes {
+                            name: name,
+                            bytes: Some(bytes),
+                        }),
+                        FileData::String(name) => #input_file::String(name),
+                    }
+                }
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::schema::Spec;
+use crate::schema::{Field, Spec};
 use crate::{naming::*, schema::Method};
 use crate::{util::*, MultiTypes, INPUT_FILE};
 use anyhow::{anyhow, Result};
@@ -68,7 +68,12 @@ impl<'a> GenerateMethods<'a> {
             let vars = fields.iter().map(|f| {
                 let name = get_field_name(f);
                 let name = format_ident!("{}", name);
-                if is_json(&f) {
+                if is_inputfile(&f) {
+                    let json_name = format_ident!("{}_json", f.name);
+                    quote! {
+                        #json_name
+                    }
+                } else if is_json(&f) {
                     quote! {
                         serde_json::to_value(&#name)?
                     }
@@ -93,8 +98,55 @@ impl<'a> GenerateMethods<'a> {
         Ok(res)
     }
 
-    fn generate_method(&self, method: &Method) -> Result<TokenStream> {
+    fn generate_file_handler(&self, method: &Method) -> TokenStream {
+        if let Some(fieldlist) = method
+            .fields
+            .as_ref()
+            .map(|v| v.iter().filter(|f| is_inputfile(&f)))
+        {
+            let fieldlist = fieldlist.collect::<Vec<&Field>>();
+            let mut res = if fieldlist.len() > 0 {
+                quote! { let data = Form::new(); }
+            } else {
+                quote!()
+            };
+            fieldlist.iter().for_each(|field| {
+                let name = field.name.as_str();
+                let typename = format_ident!("{}", name);
+                let json_name = format_ident!("{}_json", name);
+                let q = quote! {
+                    let inputfile = #typename.to_inputfile(#name.to_owned());
+                    let (data, #json_name) = inputfile.to_form(data)?;
+                };
+                res.extend(q);
+            });
+            res
+        } else {
+            quote!()
+        }
+    }
+
+    fn generate_post(&self, method: &Method) -> TokenStream {
         let endpoint = &method.name;
+        let inputfile = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .fold(false, |b, f| if is_inputfile(&f) { true } else { b });
+
+        if inputfile {
+            quote! {
+                self.post_data(#endpoint, form, data).await?
+            }
+        } else {
+            quote! {
+                self.post(#endpoint, form).await?
+            }
+        }
+    }
+
+    fn generate_method(&self, method: &Method) -> Result<TokenStream> {
         let name = get_method_name(method);
         let fn_name = format_ident!("{}", name);
         let returntype = self.choose_type(method.returns.as_slice(), false)?;
@@ -110,13 +162,22 @@ impl<'a> GenerateMethods<'a> {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|f| self.choose_type(&f.types, !f.required).unwrap());
+            .map(|f| {
+                if is_inputfile(&f) {
+                    quote! { FileData }
+                } else {
+                    self.choose_type(&f.types, !f.required).unwrap()
+                }
+            });
 
         let instantiate = self.instantiate_urlencoding_struct(method)?;
+        let file_handler = self.generate_file_handler(method);
+        let post = self.generate_post(method);
         let res = quote! {
             pub async fn #fn_name (&self, #( #typenames: #types ),*) -> Result<#returntype> {
+                #file_handler
                 let form = #instantiate;
-                let resp = self.post(#endpoint, form).await?;
+                let resp = #post;
                 let resp = serde_json::from_value(resp.result)?;
                 Ok(resp)
             }
