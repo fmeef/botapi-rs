@@ -17,9 +17,7 @@ pub(crate) fn is_inputfile(field: &Field) -> bool {
     is_inputfile_types(field.types.as_slice())
 }
 pub(crate) fn is_inputfile_types(field: &[String]) -> bool {
-    let inputfile = field.contains(&INPUT_FILE.to_owned());
-    let string = field.contains(&"String".to_owned());
-    inputfile && string && field.len() == 2
+    field.contains(&INPUT_FILE.to_owned())
 }
 pub(crate) fn field_iter<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where

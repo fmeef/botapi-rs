@@ -175,7 +175,9 @@ impl<'a> GenerateMethods<'a> {
         let instantiate = self.instantiate_urlencoding_struct(method)?;
         let file_handler = self.generate_file_handler(method);
         let post = self.generate_post(method);
+        let comment = method.description.concat().into_comment();
         let res = quote! {
+            #comment
             pub async fn #fn_name (&self, #( #typenames: #types ),*) -> Result<#returntype> {
                 #file_handler
                 let form = #instantiate;
