@@ -113,16 +113,17 @@ impl Bot {
             }),
             FileData::String(name) => InputFile::String(name),
         };
+        let (data, json) = inputfile.to_form(Form::new())?;
         let form = SendStickerOpts {
             chat_id: chat_id,
-            sticker: serde_json::to_value(&inputfile)?,
+            sticker: json,
             disable_notification: disable_notification,
             protect_content: protect_content,
             reply_to_message_id: reply_to_message_id,
             allow_sending_without_reply: allow_sending_without_reply,
             reply_markup: serde_json::to_value(&reply_markup)?,
         };
-        let resp = self.post("sendSticker", form).await?;
+        let resp = self.post_data("sendSticker", form, data).await?;
         let resp = serde_json::from_value(resp.result)?;
         Ok(resp)
     }

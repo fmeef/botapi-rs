@@ -86,7 +86,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.name == INPUT_FILE {
             let q = quote! {
-               fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
+               pub fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
                    let ser = serde_json::to_value(&self)?;
                    let res = match self {
                        InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
