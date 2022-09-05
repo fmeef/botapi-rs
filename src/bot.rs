@@ -8,9 +8,9 @@ static TELEGRAM_API: &str = "https://api.telegram.org";
 #[derive(Serialize, Deserialize)]
 pub struct Response {
     pub ok: bool,
-    pub result: serde_json::Value,
+    pub result: Option<serde_json::Value>,
     pub error_code: i64,
-    pub descrition: String,
+    pub description: String,
     pub parameters: Option<ResponseParameters>,
 }
 
@@ -23,9 +23,9 @@ impl Default for Response {
     fn default() -> Self {
         Response {
             ok: true,
-            result: serde_json::Value::Null,
+            result: None,
             error_code: 0,
-            descrition: "".into(),
+            description: "".into(),
             parameters: None,
         }
     }
@@ -53,6 +53,13 @@ impl Bot {
     {
         let endpoint = self.get_endpoint(endpoint);
         let resp = self.client.post(endpoint).form(&body).send().await?;
+        let resp: Response = serde_json::from_slice(&resp.bytes().await?)?;
+        Ok(resp)
+    }
+
+    pub async fn post_empty(&self, endpoint: &str) -> Result<Response> {
+        let endpoint = self.get_endpoint(endpoint);
+        let resp = self.client.post(endpoint).send().await?;
         let resp: Response = serde_json::from_slice(&resp.bytes().await?)?;
         Ok(resp)
     }

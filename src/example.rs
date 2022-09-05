@@ -118,7 +118,7 @@ impl Bot {
             reply_markup: serde_json::to_value(&reply_markup)?,
         };
         let resp = self.post_data("sendSticker", form, data).await?;
-        let resp = serde_json::from_value(resp.result)?;
+        let resp = serde_json::from_value(resp.result.unwrap_or_default())?;
         Ok(resp)
     }
 
@@ -142,7 +142,7 @@ impl Bot {
             reply_markup: serde_json::to_value(&reply_markup)?,
         };
         let resp = self.post("sendSticker", form).await?;
-        let resp = serde_json::from_value(resp.result)?;
+        let resp = serde_json::from_value(resp.result.unwrap_or_default())?;
         Ok(resp)
     }
 }

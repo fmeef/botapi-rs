@@ -61,38 +61,40 @@ impl<'a> GenerateMethods<'a> {
         let structname = get_type_name_str(&method.name);
         let structname = format_ident!("{}Opts", structname);
         let res = if let Some(fields) = &method.fields {
-            let typenames = fields
-                .iter()
-                .map(|f| get_field_name(f))
-                .map(|f| format_ident!("{}", f));
-            let vars = fields.iter().map(|f| {
-                let name = get_field_name(f);
-                let name = format_ident!("{}", name);
-                if is_inputfile(&f) {
-                    let json_name = format_ident!("{}_json", f.name);
-                    quote! {
-                        #json_name
+            if fields.len() == 0 {
+                quote!()
+            } else {
+                let typenames = fields
+                    .iter()
+                    .map(|f| get_field_name(f))
+                    .map(|f| format_ident!("{}", f));
+                let vars = fields.iter().map(|f| {
+                    let name = get_field_name(f);
+                    let name = format_ident!("{}", name);
+                    if is_inputfile(&f) {
+                        let json_name = format_ident!("{}_json", f.name);
+                        quote! {
+                            #json_name
+                        }
+                    } else if is_json(&f) {
+                        quote! {
+                            serde_json::to_value(&#name)?
+                        }
+                    } else {
+                        name.to_token_stream()
                     }
-                } else if is_json(&f) {
-                    quote! {
-                        serde_json::to_value(&#name)?
-                    }
-                } else {
-                    name.to_token_stream()
-                }
-            });
+                });
 
-            quote! {
-                #structname {
-                    #(
-                        #typenames : #vars
-                    ),*
+                quote! {
+                   let form = #structname {
+                        #(
+                            #typenames : #vars
+                        ),*
+                    };
                 }
             }
         } else {
-            quote! {
-                #structname()
-            }
+            quote!()
         };
 
         Ok(res)
@@ -136,8 +138,11 @@ impl<'a> GenerateMethods<'a> {
             .unwrap_or_default()
             .iter()
             .fold(false, |b, f| if is_inputfile(&f) { true } else { b });
-
-        if inputfile {
+        if method.fields.as_deref().unwrap_or_default().len() == 0 {
+            quote! {
+                self.post_empty(#endpoint).await?;
+            }
+        } else if inputfile {
             quote! {
                 self.post_data(#endpoint, form, data).await?
             }
@@ -180,9 +185,9 @@ impl<'a> GenerateMethods<'a> {
             #comment
             pub async fn #fn_name (&self, #( #typenames: #types ),*) -> Result<#returntype> {
                 #file_handler
-                let form = #instantiate;
+                #instantiate
                 let resp = #post;
-                let resp = serde_json::from_value(resp.result)?;
+                let resp = serde_json::from_value(resp.result.unwrap_or_default())?;
                 Ok(resp)
             }
         };
