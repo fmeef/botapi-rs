@@ -87,6 +87,12 @@ where
     &t[ARRAY_OF.len() * nested..]
 }
 
+fn is_chatid(types: &[String]) -> bool {
+    types.len() == 2
+        && types.contains(&"String".to_owned())
+        && types.contains(&"Integer".to_owned())
+}
+
 pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<TokenStream> {
     let mytype = &field.types[0];
     let nested = is_array(&mytype);
@@ -95,7 +101,9 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
         let fm = if is_inputfile(field) || (parent.is_media() && field.name == "media") {
             INPUT_FILE.to_owned()
         } else {
-            if field.types.len() > 1 {
+            if is_chatid(field.types.as_slice()) {
+                "i64".to_owned()
+            } else if field.types.len() > 1 {
                 get_multitype_name(&field)
             } else {
                 mytype[ARRAY_OF.len() * nested..].to_owned()
@@ -136,7 +144,9 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
         let mytype = if is_inputfile(field) || (parent.is_media() && field.name == "media") {
             INPUT_FILE.to_owned()
         } else {
-            if field.types.len() > 1 {
+            if is_chatid(field.types.as_slice()) {
+                "i64".to_owned()
+            } else if field.types.len() > 1 {
                 get_multitype_name(field)
             } else {
                 type_mapper(mytype)
