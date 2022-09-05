@@ -9,7 +9,7 @@ static TELEGRAM_API: &str = "https://api.telegram.org";
 pub struct Response {
     pub ok: bool,
     pub result: Option<serde_json::Value>,
-    pub error_code: i64,
+    pub error_code: Option<i64>,
     pub description: Option<String>,
     pub parameters: Option<ResponseParameters>,
 }
@@ -24,7 +24,7 @@ impl Default for Response {
         Response {
             ok: true,
             result: None,
-            error_code: 0,
+            error_code: None,
             description: None,
             parameters: None,
         }
@@ -44,7 +44,7 @@ impl Bot {
     }
 
     fn get_endpoint(&self, endpoint: &str) -> String {
-        format!("{}/{}/{}", TELEGRAM_API, self.token, endpoint)
+        format!("{}/bot{}/{}", TELEGRAM_API, self.token, endpoint)
     }
 
     pub async fn post<T>(&self, endpoint: &str, body: T) -> Result<Response>
