@@ -6,22 +6,28 @@ use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::ARRAY_OF;
 
+/// Generator for telegram api methods. This hould be run after GenerateTypes
 pub(crate) struct GenerateMethods<'a> {
     spec: &'a Spec,
     multitypes: MultiTypes,
 }
 
 impl<'a> GenerateMethods<'a> {
+    /// Instantiate GenerateMethods using the json spec and enum type mapping
     pub(crate) fn new(spec: &'a Spec, multitypes: MultiTypes) -> Self {
         Self {
             spec,
             multitypes: multitypes.clone(),
         }
     }
+
+    /// Render a rust source file with api methods
     pub(crate) fn generate_methods(&self) -> Result<String> {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
 
+    /// Generate a struct for serializing the parameters of a method using
+    /// x-www-form-urlencoded
     fn generate_urlencoding_struct(&self, method: &Method) -> Result<TokenStream> {
         let structname = get_type_name_str(&method.name);
         let structname = format_ident!("{}Opts", structname);
@@ -57,6 +63,7 @@ impl<'a> GenerateMethods<'a> {
         Ok(res)
     }
 
+    /// Instantiate structs for all parameters in a method
     fn instantiate_urlencoding_struct(&self, method: &Method) -> Result<TokenStream> {
         let structname = get_type_name_str(&method.name);
         let structname = format_ident!("{}Opts", structname);
@@ -100,6 +107,7 @@ impl<'a> GenerateMethods<'a> {
         Ok(res)
     }
 
+    /// If a method handles uploaded files, generate multipart/form-data code
     fn generate_file_handler(&self, method: &Method) -> TokenStream {
         if let Some(fieldlist) = method
             .fields
@@ -130,6 +138,8 @@ impl<'a> GenerateMethods<'a> {
         }
     }
 
+    /// Choose what post method to call based on whether we are uploading multipart/form-data
+    /// or if we have a method with no parameters (which breaks serde for some reason)
     fn generate_post(&self, method: &Method) -> TokenStream {
         let endpoint = &method.name;
         let inputfile = method
@@ -153,6 +163,7 @@ impl<'a> GenerateMethods<'a> {
         }
     }
 
+    /// Generate an api method
     fn generate_method(&self, method: &Method) -> Result<TokenStream> {
         let name = get_method_name(method);
         let fn_name = format_ident!("{}", name);
@@ -199,6 +210,9 @@ impl<'a> GenerateMethods<'a> {
         Ok(res)
     }
 
+    /// Generate the type for a specific field, depending if we have an array type,
+    /// a api type that needs to be mapped to a native type, or a choice of types that
+    /// should be either narrowed down to owe or turned into an enum type
     fn choose_type(&self, t: &[String], optional: bool) -> Result<TokenStream> {
         let mytype = if t.len() > 1 {
             self.get_multitype_by_vec(t)?.to_owned()
@@ -256,6 +270,9 @@ impl<'a> GenerateMethods<'a> {
         }
     }
 
+    /// If we find multiple types in one field and we can't make a decision about it,
+    /// use the mapping from enum names to types generated from the 'types' phase
+    /// to decide what enum to use
     fn get_multitype_by_vec(&'a self, types: &[String]) -> Result<String> {
         if is_inputfile_types(types) {
             Ok(INPUT_FILE.to_owned())

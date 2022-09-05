@@ -6,12 +6,14 @@ use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
 
+/// Generator for the "types" source file
 pub(crate) struct GenerateTypes<'a> {
     spec: &'a Spec,
     multitypes: MultiTypes,
 }
 
 impl<'a> GenerateTypes<'a> {
+    /// Instantiate a new GenerateTypes using api spec and enum type mapping
     pub(crate) fn new(spec: &'a Spec, multitypes: MultiTypes) -> Self {
         Self {
             spec,
@@ -74,6 +76,7 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
+    /// Generate use statements for this file
     fn generate_use(&self) -> Result<TokenStream> {
         Ok(quote! {
             use serde::{Deserialize, Serialize};
@@ -83,6 +86,8 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
+    /// Generate special method for generating multipart/form-data for uploaded files. This is only
+    /// generated on "InputFile" which has special treatment in telegram api
     fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.name == INPUT_FILE {
             let q = quote! {
@@ -105,6 +110,7 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    /// If a type is a subtype of InputMedia generate multipart/form-data handler method as well
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
@@ -127,6 +133,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    /// If we can't chose a specific type when a field has multiple types, generate an enum with
+    /// all types
     fn generate_multitype_enums(&self) -> Result<TokenStream> {
         let mut tokens = quote!();
 
@@ -175,6 +183,8 @@ impl<'a> GenerateTypes<'a> {
         Ok(tokens)
     }
 
+    /// Helper method for generating a name for a multitype enum while storing it in the mapping
+    /// for later use by methods generator
     fn get_multitype_name(&self, field_name: &Field) -> Option<String> {
         let mut multitypes = self
             .multitypes
@@ -199,6 +209,7 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    /// Generate an enum with custom types
     fn generate_enum_str<N, I>(&self, types: &[I], name: &N) -> Result<TokenStream>
     where
         N: AsRef<str>,
@@ -226,6 +237,8 @@ impl<'a> GenerateTypes<'a> {
         Ok(e)
     }
 
+    /// For the "InputFile" type genenerate helpers for working with uploaded files and file
+    /// references.
     fn generate_inputfile_enum(&self) -> TokenStream {
         let input_file = format_ident!("{}", INPUT_FILE);
         quote! {
@@ -263,6 +276,7 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    /// For subtypes, generate traits and trait bounds to allow generics to work
     fn generate_trait_impl<T>(&self, traitname: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -292,6 +306,7 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
+    /// Generate an impl with getters to allow type erasure
     fn generate_impl<T>(&self, name: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -335,6 +350,7 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
+    /// Generate a trait impl for a specific type
     fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
         let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
@@ -360,6 +376,7 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
+    /// Generate a struct based on a type name from the api spec
     fn generate_struct<T>(&self, name: &T) -> Result<TokenStream>
     where
         T: AsRef<str>,

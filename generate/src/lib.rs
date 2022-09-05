@@ -13,8 +13,10 @@ pub(crate) mod schema;
 mod types;
 pub(crate) mod util;
 
+/// Type for mapping type names for multitype enums
 pub(crate) type MultiTypes = Arc<RwLock<HashMap<String, String>>>;
 
+/// Generator for both types and methods
 pub struct Generate {
     spec: Spec,
     multitypes: Arc<RwLock<HashMap<String, String>>>,

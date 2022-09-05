@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use anyhow::Result;
 use serde::Deserialize;
 
+/// Serde representation of the json api spec from https://github.com/PaulSonOfLars/telegram-bot-api-spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub(crate) struct Spec {
@@ -11,6 +12,7 @@ pub(crate) struct Spec {
     pub(crate) methods: HashMap<String, Method>,
 }
 
+/// Serde representation of a json method spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub(crate) struct Method {
@@ -21,6 +23,7 @@ pub(crate) struct Method {
     pub(crate) fields: Option<Vec<Field>>,
 }
 
+/// Serde representation of a json type spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub(crate) struct Type {
@@ -32,6 +35,7 @@ pub(crate) struct Type {
     pub(crate) subtype_of: Option<Vec<String>>,
 }
 
+/// Serde representation of a json field spec
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub(crate) struct Field {
@@ -42,6 +46,8 @@ pub(crate) struct Field {
 }
 
 impl Type {
+    /// Returns true if a type should be treated as "InputMedia"
+    /// used for working with files
     pub(crate) fn is_media(&self) -> bool {
         self.subtype_of
             .as_ref()
@@ -55,18 +61,23 @@ impl Type {
 
 #[allow(dead_code)]
 impl Spec {
+    /// Gets a type from the spec by name, None if nonexistent
     pub(crate) fn get_type<'a, T: AsRef<str>>(&'a self, name: &T) -> Option<&'a Type> {
         self.types.get(name.as_ref())
     }
 
+    /// Gets a method from the spec by name, None if nonexistent
     pub(crate) fn get_method<'a, T: AsRef<str>>(&'a self, name: &T) -> Option<&'a Method> {
         self.methods.get(name.as_ref())
     }
 
+    /// returns an Iterator over all types in this spec
     pub(crate) fn iter_types<'a>(&'a self) -> impl Iterator<Item = &'a Type> {
         self.types.values()
     }
 
+    /// Get all subtypes of a type by name, None if the type is nonexistent, Err if the type
+    /// contains nonexistent subtypes
     pub(crate) fn get_subtypes<'a, T: AsRef<str>>(
         &'a self,
         name: &T,
@@ -89,6 +100,8 @@ impl Spec {
         res.map_or(Ok(None), |v| v.map(Some))
     }
 
+    /// Get a list of a type's subtypes, None if the type is nonexistent, Err if any of the
+    /// subtypes are nonexistent
     fn get_subtype_of<'a, T: AsRef<str>>(&'a self, name: &T) -> Result<Option<Vec<&'a Type>>> {
         let res = self
             .types

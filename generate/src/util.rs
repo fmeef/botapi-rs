@@ -8,17 +8,25 @@ use crate::schema::{Field, Spec, Type};
 use anyhow::Result;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
+/// CycleChecker checks a specific type to avoid member "loops" that confuse rustc. For rustc
+/// recursive types have infinite size and trigger a compiler error. We can fix this by running
+/// cycle detection on members and breaking any cycles using a Box<T>
 struct CycleChecker<'a> {
     spec: &'a Spec,
     visited: HashSet<&'a str>,
 }
 
+/// Check if a field is an "InputFile" for special treatment
 pub(crate) fn is_inputfile(field: &Field) -> bool {
     is_inputfile_types(field.types.as_slice())
 }
+
+/// Check if a field is an "InputFile" for special treatment
 pub(crate) fn is_inputfile_types(field: &[String]) -> bool {
     field.contains(&INPUT_FILE.to_owned())
 }
+
+/// Helper method to walk map a function onto a type's fields
 pub(crate) fn field_iter<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where
     F: FnMut(&Field) -> R,
@@ -27,6 +35,7 @@ where
     t.fields.iter().flat_map(|v| v.iter()).map(func)
 }
 
+/// Helper method to walk map a function onto a type's fields
 pub(crate) fn field_iter_str<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where
     F: FnMut(String) -> R + 'a,
@@ -37,6 +46,7 @@ where
         .map(func)
 }
 
+/// Get the name for a multitype enum
 pub(crate) fn get_multitype_name(fieldname: &Field) -> String {
     if is_inputfile(fieldname) {
         INPUT_FILE.to_owned()
@@ -47,6 +57,7 @@ pub(crate) fn get_multitype_name(fieldname: &Field) -> String {
     }
 }
 
+/// Check if a json spec type name is an "array" and return the offset of the actual type name
 pub(crate) fn is_array<T>(name: &T) -> usize
 where
     T: AsRef<str>,
@@ -54,6 +65,7 @@ where
     name.as_ref().matches(ARRAY_OF).count()
 }
 
+/// Helper function to generate a std::fmt::Display implementation for multiple types
 pub(crate) fn generate_fmt_display_enum<'a, T, V, U>(name: &T, types: V) -> TokenStream
 where
     T: AsRef<str>,
@@ -78,6 +90,7 @@ where
     }
 }
 
+/// Take a type name and return a slice without a leading "Array of.*"
 pub(crate) fn type_without_array<'a, T>(t: &'a T) -> &'a str
 where
     T: AsRef<str>,
@@ -87,12 +100,16 @@ where
     &t[ARRAY_OF.len() * nested..]
 }
 
+/// Hacky workaround to break our dependency on multitype enums for now while serde_urlencoded
+/// fixes outstanding issues with untagged enums
 fn is_chatid(types: &[String]) -> bool {
     types.len() == 2
         && types.contains(&"String".to_owned())
         && types.contains(&"Integer".to_owned())
 }
-
+/// Generate the type for a specific field, depending if we have an array type,
+/// a api type that needs to be mapped to a native type, or a choice of types that
+/// should be either narrowed down to owe or turned into an enum type
 pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<TokenStream> {
     let mytype = &field.types[0];
     let nested = is_array(&mytype);
@@ -169,6 +186,7 @@ pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<T
     Ok(is_optional(field, t))
 }
 
+/// Conditionally generate an Option<T> out of a field
 pub(crate) fn is_optional<T>(field: &Field, tokenstram: T) -> TokenStream
 where
     T: ToTokens,
@@ -182,6 +200,7 @@ where
     }
 }
 
+/// Check if a field should be serialized as json. If false, use a native type
 pub(crate) fn is_json(field: &Field) -> bool {
     for t in &field.types {
         for compare in ["Integer", "Boolean", "Float"] {
@@ -193,6 +212,7 @@ pub(crate) fn is_json(field: &Field) -> bool {
     true
 }
 
+/// Map api spec REST types onto native rust types
 pub(crate) fn type_mapper<T>(field: &T) -> String
 where
     T: AsRef<str>,
@@ -213,6 +233,7 @@ impl<'a> CycleChecker<'a> {
         }
     }
 
+    /// Check a type's field for dependency loops
     fn check_parent<T>(&mut self, parent: &'a Type, name: &T) -> bool
     where
         T: AsRef<str>,
@@ -233,6 +254,7 @@ impl<'a> CycleChecker<'a> {
     }
 }
 
+/// Helper trait for turing &str things into doc comments
 pub(crate) trait IntoComment {
     fn into_comment(&self) -> TokenStream;
 }
