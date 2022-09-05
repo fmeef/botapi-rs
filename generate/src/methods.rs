@@ -33,7 +33,7 @@ impl<'a> GenerateMethods<'a> {
             let types = fields.iter().filter_map(|f| {
                 if is_json(&f) {
                     Some(quote! {
-                        serde_json::Value
+                        String
                     })
                 } else {
                     self.choose_type(&f.types, !f.required).ok()
@@ -78,7 +78,7 @@ impl<'a> GenerateMethods<'a> {
                         }
                     } else if is_json(&f) {
                         quote! {
-                            serde_json::to_value(&#name)?
+                            serde_json::to_string(&#name)?
                         }
                     } else {
                         name.to_token_stream()

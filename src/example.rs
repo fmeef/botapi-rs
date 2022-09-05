@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 
-use crate::{bot::Bot, gen_types::*};
+use crate::gen_types::*;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Location {

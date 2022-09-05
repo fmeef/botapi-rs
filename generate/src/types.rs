@@ -86,8 +86,8 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.name == INPUT_FILE {
             let q = quote! {
-               pub fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
-                   let ser = serde_json::to_value(&self)?;
+               pub fn to_form(self, data: Form) -> Result<(Form, String)> {
+                   let ser = serde_json::to_string(&self)?;
                    let res = match self {
                        InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
                            let form = data.part(name, Part::bytes(bytes));
@@ -108,8 +108,8 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
-               fn to_form(self, data: Form) -> Result<(Form, serde_json::Value)> {
-                   let ser = serde_json::to_value(&self)?;
+               fn to_form(self, data: Form) -> Result<(Form, String)> {
+                   let ser = serde_json::to_string(&self)?;
                    let res = match self.media {
                        Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
                            let form = data.part(name, Part::bytes(bytes));
