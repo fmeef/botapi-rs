@@ -140,7 +140,7 @@ impl<'a> GenerateMethods<'a> {
             .fold(false, |b, f| if is_inputfile(&f) { true } else { b });
         if method.fields.as_deref().unwrap_or_default().len() == 0 {
             quote! {
-                self.post_empty(#endpoint).await?;
+                self.post_empty(#endpoint).await?
             }
         } else if inputfile {
             quote! {
