@@ -58,7 +58,7 @@ impl Bot {
         T: Serialize,
     {
         let endpoint = self.get_endpoint(endpoint);
-        let resp = self.client.post(endpoint).form(&body).send().await?;
+        let resp = self.client.post(endpoint).query(&body).send().await?;
         let bytes = resp.bytes().await?;
         let mut deser = serde_json::Deserializer::from_slice(&bytes);
         let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
@@ -84,7 +84,7 @@ impl Bot {
         let resp = self
             .client
             .post(endpoint)
-            .form(&body)
+            .query(&body)
             .multipart(data)
             .send()
             .await?;

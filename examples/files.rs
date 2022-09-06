@@ -11,11 +11,12 @@ async fn main() -> Result<()> {
             if let Some(message) = update.get_message() {
                 let chat = message.get_chat();
                 let filedata = FileData::Bytes(vec![0, 0, 0]);
+                println!("chat_id {}", chat.get_id());
                 bot.send_document(
                     *chat.get_id(),
                     filedata,
                     None,
-                    Some("cry".to_owned()),
+                    None,
                     None,
                     None,
                     None,

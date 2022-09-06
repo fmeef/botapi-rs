@@ -385,11 +385,24 @@ impl<'a> GenerateTypes<'a> {
             .get_type(name)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", t.name);
-        let fieldnames = field_iter_str(&t, |v| format_ident!("{}", v));
-        let serdenames = t
-            .fields
-            .iter()
-            .flat_map(|f| f.iter().map(|v| v.name.as_str()));
+
+        let fieldnames = field_iter(&t, |f| {
+            let v = &f.name;
+            let fieldname = get_field_name(f);
+            let name = format_ident!("{}", fieldname);
+            if f.required {
+                quote! {
+                    #[serde(rename = #v)]
+                    #name
+                }
+            } else {
+                quote! {
+                    #[serde(skip_serializing_if = "Option::is_none", rename = #v)]
+                    #name
+                }
+            }
+        });
+
         let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
         let struct_comment = t.description.concat().into_comment();
@@ -399,7 +412,6 @@ impl<'a> GenerateTypes<'a> {
             pub struct #typename {
                 #(
                     #comments
-                    #[serde(rename = #serdenames)]
                     #fieldnames: #fieldtypes
                 ),*
             }
