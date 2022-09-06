@@ -124,9 +124,20 @@ impl<'a> GenerateMethods<'a> {
                 let name = field.name.as_str();
                 let typename = format_ident!("{}", name);
                 let json_name = format_ident!("{}_json", name);
-                quote! {
-                    let inputfile = #typename.to_inputfile(#name.to_owned());
-                    let (data, #json_name) = inputfile.to_form(data)?;
+                if field.required {
+                    quote! {
+                        let inputfile = #typename.to_inputfile(#name.to_owned());
+                        let (data, #json_name) = inputfile.to_form(data)?;
+                    }
+                } else {
+                    quote! {
+                        let (data, #json_name) = if let Some(#typename) = #typename {
+                            let inputfile = #typename.to_inputfile(#name.to_owned());
+                            inputfile.to_form(data)?
+                        } else {
+                            (data, serde_json::to_string(&serde_json::Value::Null)?)
+                        };
+                    }
                 }
             });
             quote! {
@@ -182,7 +193,8 @@ impl<'a> GenerateMethods<'a> {
             .iter()
             .map(|f| {
                 if is_inputfile(&f) {
-                    quote! { FileData }
+                    let q = quote! { FileData };
+                    is_optional(f, q)
                 } else {
                     self.choose_type(&f.types, !f.required).unwrap()
                 }
@@ -214,7 +226,9 @@ impl<'a> GenerateMethods<'a> {
     /// a api type that needs to be mapped to a native type, or a choice of types that
     /// should be either narrowed down to owe or turned into an enum type
     fn choose_type(&self, t: &[String], optional: bool) -> Result<TokenStream> {
-        let mytype = if t.len() > 1 {
+        let mytype = if is_chatid(t) {
+            "i64".to_owned()
+        } else if t.len() > 1 {
             self.get_multitype_by_vec(t)?.to_owned()
         } else {
             t[0].clone()

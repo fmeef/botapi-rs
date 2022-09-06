@@ -102,7 +102,7 @@ where
 
 /// Hacky workaround to break our dependency on multitype enums for now while serde_urlencoded
 /// fixes outstanding issues with untagged enums
-fn is_chatid(types: &[String]) -> bool {
+pub(crate) fn is_chatid(types: &[String]) -> bool {
     types.len() == 2
         && types.contains(&"String".to_owned())
         && types.contains(&"Integer".to_owned())
