@@ -32,10 +32,18 @@ impl<'a> GenerateMethods<'a> {
         let structname = get_type_name_str(&method.name);
         let structname = format_ident!("{}Opts", structname);
         let res = if let Some(fields) = &method.fields {
-            let typenames = fields
-                .iter()
-                .map(|f| get_field_name(f))
-                .map(|f| format_ident!("{}", f));
+            let typenames = fields.iter().map(|f| {
+                let name = get_field_name(f);
+                let name = format_ident!("{}", name);
+                if f.required {
+                    name.to_token_stream()
+                } else {
+                    quote! {
+                        #[serde(skip_serializing_if = "Option::is_none")]
+                        #name
+                    }
+                }
+            });
             let types = fields.iter().filter_map(|f| {
                 if is_json(&f) {
                     let res = quote! {
