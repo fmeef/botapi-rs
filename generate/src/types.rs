@@ -92,16 +92,15 @@ impl<'a> GenerateTypes<'a> {
         if t.name == INPUT_FILE {
             let q = quote! {
                pub fn to_form(self, data: Form) -> Result<(Form, String)> {
-                   let ser = serde_json::to_string(&self)?;
-                   let res = match self {
+                      match self {
                        InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
+                           let attach = format!("attach://{}", name);
                            let form = data.part(name, Part::bytes(bytes));
-                           Ok(form)
+                           Ok((form, attach))
                        }
-                       InputFile::String(_) => Ok(data),
+                       InputFile::String(name) => Ok((data, name)),
                        _ => Err(anyhow!("cry")),
-                   }?;
-                   Ok((res, ser))
+                   }
                }
             };
             Ok(q)
@@ -115,16 +114,15 @@ impl<'a> GenerateTypes<'a> {
         if t.is_media() {
             let q = quote! {
                fn to_form(self, data: Form) -> Result<(Form, String)> {
-                   let ser = serde_json::to_string(&self)?;
-                   let res = match self.media {
+                   match self.media {
                        Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
+                           let attach = format!("attach://{}", name);
                            let form = data.part(name, Part::bytes(bytes));
-                           Ok(form)
+                           Ok((form, attach))
                        }
-                       Some(InputFile::String(_)) => Ok(data),
+                       Some(InputFile::String(name)) => Ok((data, name)),
                        _ => Err(anyhow!("cry")),
-                   }?;
-                   Ok((res, ser))
+                   }
                }
             };
             Ok(q)

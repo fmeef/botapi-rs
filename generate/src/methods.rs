@@ -145,6 +145,7 @@ impl<'a> GenerateMethods<'a> {
                     quote! {
                         let inputfile = #typename.to_inputfile(#name.to_owned());
                         let (data, #json_name) = inputfile.to_form(data)?;
+                        println!("attach {}", #json_name);
                     }
                 } else {
                     quote! {
