@@ -38,9 +38,10 @@ impl<'a> GenerateMethods<'a> {
                 .map(|f| format_ident!("{}", f));
             let types = fields.iter().filter_map(|f| {
                 if is_json(&f) {
-                    Some(quote! {
+                    let res = quote! {
                         String
-                    })
+                    };
+                    Some(is_optional(f, res))
                 } else {
                     self.choose_type(&f.types, !f.required).ok()
                 }
@@ -84,8 +85,16 @@ impl<'a> GenerateMethods<'a> {
                             #json_name
                         }
                     } else if is_json(&f) {
-                        quote! {
-                            serde_json::to_string(&#name)?
+                        if f.required {
+                            quote! { serde_json::to_string(&#name)? }
+                        } else {
+                            quote! {
+                                if let Some(#name) = #name {
+                                    Some(serde_json::to_string(&#name)?)
+                                } else {
+                                    None
+                                }
+                            }
                         }
                     } else {
                         name.to_token_stream()
@@ -133,9 +142,10 @@ impl<'a> GenerateMethods<'a> {
                     quote! {
                         let (data, #json_name) = if let Some(#typename) = #typename {
                             let inputfile = #typename.to_inputfile(#name.to_owned());
-                            inputfile.to_form(data)?
+                            let (data, #json_name) = inputfile.to_form(data)?;
+                            (data, Some(#json_name))
                         } else {
-                            (data, serde_json::to_string(&serde_json::Value::Null)?)
+                            (data, None)
                         };
                     }
                 }
