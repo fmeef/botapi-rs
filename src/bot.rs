@@ -59,7 +59,9 @@ impl Bot {
     {
         let endpoint = self.get_endpoint(endpoint);
         let resp = self.client.post(endpoint).form(&body).send().await?;
-        let resp: Response = serde_json::from_slice(&resp.bytes().await?)?;
+        let bytes = resp.bytes().await?;
+        let mut deser = serde_json::Deserializer::from_slice(&bytes);
+        let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
         Ok(resp)
     }
 
@@ -67,7 +69,9 @@ impl Bot {
     pub async fn post_empty(&self, endpoint: &str) -> Result<Response> {
         let endpoint = self.get_endpoint(endpoint);
         let resp = self.client.post(endpoint).send().await?;
-        let resp: Response = serde_json::from_slice(&resp.bytes().await?)?;
+        let bytes = resp.bytes().await?;
+        let mut deser = serde_json::Deserializer::from_slice(&bytes);
+        let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
         Ok(resp)
     }
 
@@ -84,7 +88,9 @@ impl Bot {
             .multipart(data)
             .send()
             .await?;
-        let resp: Response = serde_json::from_slice(&resp.bytes().await?)?;
+        let bytes = resp.bytes().await?;
+        let mut deser = serde_json::Deserializer::from_slice(&bytes);
+        let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
         Ok(resp)
     }
 }

@@ -245,7 +245,6 @@ impl<'a> GenerateTypes<'a> {
 
             #[derive(Serialize, Deserialize, Debug)]
             pub struct FileBytes {
-                #[serde(flatten)]
                 pub(crate) name: String,
                 #[serde(skip, default)]
                 pub(crate) bytes: Option<Vec<u8>>
