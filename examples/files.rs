@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
         for update in update {
             if let Some(message) = update.get_message() {
                 let chat = message.get_chat();
-                let filedata = FileData::Bytes(vec![0, 0, 1]);
+                let filedata = FileData::Bytes("whfwejmkbfejbfe".as_bytes().to_owned());
                 println!(
                     "chat_id {} offset {} message {}",
                     chat.get_id(),
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
                     *chat.get_id(),
                     filedata,
                     None,
-                    Some("cry".to_owned()),
+                    Some("sad".to_owned()),
                     None,
                     None,
                     None,
@@ -42,8 +42,7 @@ async fn main() -> Result<()> {
                     None,
                     None,
                 )
-                .await
-                .ok();
+                .await?;
             }
         }
     }

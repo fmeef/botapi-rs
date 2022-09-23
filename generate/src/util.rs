@@ -1,19 +1,32 @@
+use crate::schema::{Field, Spec, Type};
 use crate::{
     naming::{get_field_name, get_type_name_str},
     ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX,
 };
-use std::collections::HashSet;
-
-use crate::schema::{Field, Spec, Type};
 use anyhow::Result;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
+use std::collections::HashSet;
+use std::sync::Arc;
+
+pub(crate) trait ChooserFn {
+    fn cb<'b, 'c>(self: &Self, types: &TypeChooserOpts<'b, 'c>) -> String;
+}
+
+impl<F> ChooserFn for F
+where
+    F: for<'a, 'b, 'c> Fn(&'a TypeChooserOpts<'b, 'c>) -> String,
+{
+    fn cb<'b, 'c>(self: &Self, types: &TypeChooserOpts<'b, 'c>) -> String {
+        self(types)
+    }
+}
 
 /// CycleChecker checks a specific type to avoid member "loops" that confuse rustc. For rustc
 /// recursive types have infinite size and trigger a compiler error. We can fix this by running
 /// cycle detection on members and breaking any cycles using a Box<T>
-struct CycleChecker<'a> {
-    spec: &'a Spec,
-    visited: HashSet<&'a str>,
+struct CycleChecker {
+    spec: Arc<Spec>,
+    visited: HashSet<String>,
 }
 
 /// Check if a field is an "InputFile" for special treatment
@@ -29,8 +42,9 @@ pub(crate) fn is_inputfile_types(field: &[String]) -> bool {
 /// Helper method to walk map a function onto a type's fields
 pub(crate) fn field_iter<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where
-    F: FnMut(&Field) -> R,
+    F: FnMut(&'a Field) -> R,
     F: 'a,
+    R: 'a,
 {
     t.fields.iter().flat_map(|v| v.iter()).map(func)
 }
@@ -39,11 +53,24 @@ where
 pub(crate) fn field_iter_str<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
 where
     F: FnMut(String) -> R + 'a,
+    R: 'a,
 {
     t.fields
         .iter()
         .flat_map(|v| v.iter().map(|f| get_field_name(f)))
         .map(func)
+}
+
+pub(crate) fn get_multitype_name_types<T>(name: &T, types: &[String]) -> String
+where
+    T: AsRef<str>,
+{
+    if is_inputfile_types(types) {
+        INPUT_FILE.to_owned()
+    } else {
+        let fieldname = get_type_name_str(name);
+        format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname)
+    }
 }
 
 /// Get the name for a multitype enum
@@ -72,15 +99,22 @@ where
     V: Iterator<Item = U>,
     U: AsRef<str> + 'a,
 {
-    let types = types.map(|v| format_ident!("{}", v.as_ref()));
     let name = format_ident!("{}", name.as_ref());
+    let types = types.map(|v| {
+        let t = format_ident!("{}", v.as_ref());
+        if is_primative(v) {
+            quote! {  #name::#t(thing) => thing.to_string() }
+        } else {
+            quote! { #name::#t(thing) => serde_json::to_string(thing).unwrap_or_else(|err| format!("invalid: {err}") ) }
+        }
+    });
 
     quote! {
         impl fmt::Display for #name {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let v = match self {
                    #(
-                       #name::#types(thing) => thing.to_string()
+                       #types
                    ),*
                 };
                 write!(f, "{}", v)?;
@@ -96,8 +130,12 @@ where
     T: AsRef<str>,
 {
     let nested = is_array(t);
-    let t = t.as_ref();
-    &t[ARRAY_OF.len() * nested..]
+    if nested > 0 {
+        let t = t.as_ref();
+        &t[ARRAY_OF.len() * nested..]
+    } else {
+        t.as_ref()
+    }
 }
 
 /// Hacky workaround to break our dependency on multitype enums for now while serde_urlencoded
@@ -107,83 +145,122 @@ pub(crate) fn is_chatid(types: &[String]) -> bool {
         && types.contains(&"String".to_owned())
         && types.contains(&"Integer".to_owned())
 }
-/// Generate the type for a specific field, depending if we have an array type,
-/// a api type that needs to be mapped to a native type, or a choice of types that
-/// should be either narrowed down to owe or turned into an enum type
-pub(crate) fn choose_type(spec: &Spec, field: &Field, parent: &Type) -> Result<TokenStream> {
-    let mytype = &field.types[0];
-    let nested = is_array(&mytype);
-    let mut checker = CycleChecker::new(spec);
-    let t = if nested > 0 {
-        let fm = if is_inputfile(field) || (parent.is_media() && field.name == "media") {
-            INPUT_FILE.to_owned()
-        } else {
-            if is_chatid(field.types.as_slice()) {
-                "i64".to_owned()
-            } else if field.types.len() > 1 {
-                get_multitype_name(&field)
-            } else {
-                mytype[ARRAY_OF.len() * nested..].to_owned()
-            }
-        };
-        let res = type_mapper(&fm);
-        let res = format_ident!("{}", res);
 
-        let res = if parent.is_media() && field.name == "media" {
-            quote! { Option<#res> }
-        } else {
-            res.to_token_stream()
+pub(crate) struct TypeChooserOpts<'a, 'b> {
+    pub(crate) types: &'a [String],
+    pub(crate) is_media: bool,
+    pub(crate) nested: usize,
+    pub(crate) name: &'b str,
+}
+
+pub(crate) struct ChooseType<'a> {
+    spec: Arc<Spec>,
+    type_chooser: Box<dyn ChooserFn + 'a>,
+}
+
+impl<'a> ChooseType<'a> {
+    pub(crate) fn new<U>(spec: Arc<Spec>, type_chooser: U) -> Self
+    where
+        U: for<'d, 'b, 'c> Fn(&'d TypeChooserOpts<'b, 'c>) -> String + 'a,
+        U: 'a,
+    {
+        let type_chooser = Box::new(type_chooser);
+        Self { spec, type_chooser }
+    }
+
+    /// Generate the type for a specific field, depending if we have an array type,
+    /// a api type that needs to be mapped to a native type, or a choice of types that
+    /// should be either narrowed down to owe or turned into an enum type
+    pub(crate) fn choose_type<T>(
+        &self,
+        types: &[String],
+        parent: Option<&Type>,
+        name: &T,
+        optional: bool,
+    ) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
+        let mut checker = CycleChecker::new(Arc::clone(&self.spec));
+        let nested = is_array(&types[0]);
+        let opts = TypeChooserOpts {
+            types,
+            is_media,
+            nested,
+            name: name.as_ref(),
         };
-        let mut quote = quote!();
-        for _ in 0..nested {
-            let vec = quote! {
-                Vec<
-            };
-            quote.extend(vec);
-        }
-        if checker.check_parent(parent, &fm) && !(parent.is_media() && field.name == "media") {
-            quote.extend(quote! {
-                Box<#res>
-            });
-        } else {
-            quote.extend(quote! {
-                #res
-            });
-        }
-        for _ in 0..nested {
-            let vec = quote! {
-                >
-            };
-            quote.extend(vec);
-        }
-        quote
-    } else {
-        let mytype = if is_inputfile(field) || (parent.is_media() && field.name == "media") {
-            INPUT_FILE.to_owned()
-        } else {
-            if is_chatid(field.types.as_slice()) {
-                "i64".to_owned()
-            } else if field.types.len() > 1 {
-                get_multitype_name(field)
+
+        let mytype = self.type_chooser.cb(&opts);
+        let mytype = type_mapper(&mytype);
+        let nested = is_array(&mytype);
+        let t = if nested > 0 {
+            let mytype = type_without_array(&mytype);
+            let res = type_mapper(&mytype);
+            let res = format_ident!("{}", res);
+
+            let res = if is_media && name.as_ref() == "media" {
+                quote! { Option<#res> }
             } else {
-                type_mapper(mytype)
+                res.to_token_stream()
+            };
+            let mut quote = quote!();
+            for _ in 0..nested {
+                let vec = quote! {
+                    Vec<
+                };
+                quote.extend(vec);
+            }
+            let checked = if let Some(parent) = parent {
+                checker.check_parent(parent, &mytype)
+            } else {
+                false
+            };
+
+            if checked && !(is_media && name.as_ref() == "media") {
+                quote.extend(quote! {
+                    Box<#res>
+                });
+            } else {
+                quote.extend(quote! {
+                    #res
+                });
+            }
+            for _ in 0..nested {
+                let vec = quote! {
+                    >
+                };
+                quote.extend(vec);
+            }
+            quote
+        } else {
+            let res = format_ident!("{}", mytype);
+            let res = if is_media && name.as_ref() == "media" {
+                quote! { Option<#res> }
+            } else {
+                res.to_token_stream()
+            };
+            let checked = if let Some(parent) = parent {
+                checker.check_parent(parent, &mytype)
+            } else {
+                false
+            };
+            if checked && !(is_media && name.as_ref() == "media") {
+                quote! {
+                    Box<#res>
+                }
+            } else {
+                quote!(#res)
             }
         };
-        let res = format_ident!("{}", mytype);
-        let res = if parent.is_media() && field.name == "media" {
-            quote! { Option<#res> }
-        } else {
-            res.to_token_stream()
-        };
-        if checker.check_parent(parent, &mytype) && !(parent.is_media() && field.name == "media") {
+        Ok(if optional {
             quote! {
-                Box<#res>
+                Option<#t>
             }
         } else {
-            quote!(#res)
-        }
-    };
-    Ok(is_optional(field, t))
+            t.to_token_stream()
+        })
+    }
 }
 
 /// Conditionally generate an Option<T> out of a field
@@ -200,9 +277,8 @@ where
     }
 }
 
-/// Check if a field should be serialized as json. If false, use a native type
-pub(crate) fn is_json(field: &Field) -> bool {
-    for t in &field.types {
+pub(crate) fn is_json_types(types: &[String]) -> bool {
+    for t in types {
         for compare in ["Integer", "Boolean", "Float"] {
             if t.ends_with(compare) && !t.starts_with("Array of") {
                 return false;
@@ -210,6 +286,24 @@ pub(crate) fn is_json(field: &Field) -> bool {
         }
     }
     true
+}
+
+/// Check if a field should be serialized as json. If false, use a native type
+pub(crate) fn is_json(field: &Field) -> bool {
+    is_json_types(&field.types)
+}
+
+/// Returns true if a REST type is primative (does not map to a serde type)
+pub(crate) fn is_primative<T>(field: T) -> bool
+where
+    T: AsRef<str>,
+{
+    match field.as_ref() {
+        "Integer" => true,
+        "Boolean" => true,
+        "Float" => true,
+        _ => false,
+    }
 }
 
 /// Map api spec REST types onto native rust types
@@ -225,8 +319,22 @@ where
     }
 }
 
-impl<'a> CycleChecker<'a> {
-    fn new(spec: &'a Spec) -> Self {
+/// Map api spec REST types onto native rust types
+#[allow(dead_code)]
+pub(crate) fn type_mapper_v2<T>(field: &T) -> &str
+where
+    T: AsRef<str>,
+{
+    match field.as_ref() {
+        "Integer" => "i64",
+        "Boolean" => "bool",
+        "Float" => "f64",
+        x => x,
+    }
+}
+
+impl CycleChecker {
+    fn new(spec: Arc<Spec>) -> Self {
         CycleChecker {
             spec,
             visited: HashSet::new(),
@@ -234,15 +342,12 @@ impl<'a> CycleChecker<'a> {
     }
 
     /// Check a type's field for dependency loops
-    fn check_parent<T>(&mut self, parent: &'a Type, name: &T) -> bool
-    where
-        T: AsRef<str>,
-    {
-        if self.visited.insert(&parent.name) {
+    fn check_parent(&mut self, parent: &Type, name: &str) -> bool {
+        if self.visited.insert(parent.name.clone()) {
             if let Some(field) = &parent.fields {
                 for supertype in field {
-                    if let Some(supertype) = self.spec.get_type(&supertype.types[0]) {
-                        if self.check_parent(supertype, name) {
+                    if let Some(supertype) = self.spec.clone().get_type(&supertype.types[0]) {
+                        if self.check_parent(supertype, &name) {
                             return true;
                         }
                     }

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 
@@ -76,28 +77,25 @@ impl Spec {
         self.types.values()
     }
 
+    fn get_subtypes_inner(&self, name: &str) -> Option<&[String]> {
+        self.types.get(name)?.subtypes.as_deref()
+    }
+
     /// Get all subtypes of a type by name, None if the type is nonexistent, Err if the type
     /// contains nonexistent subtypes
-    pub(crate) fn get_subtypes<'a, T: AsRef<str>>(
-        &'a self,
-        name: &T,
-    ) -> Result<Option<Vec<&'a Type>>> {
-        let res = self
-            .types
-            .get(name.as_ref())
-            .map(|t| {
-                t.subtypes.as_ref().map(|s| {
-                    s.iter()
-                        .map(|st| {
-                            self.get_type(&st)
-                                .ok_or_else(|| anyhow!("invalid type name"))
-                        })
-                        .collect::<Result<Vec<&Type>>>()
-                })
-            })
-            .flatten();
+    pub(crate) fn get_subtypes<T: AsRef<str>>(&self, name: T) -> Result<Option<Vec<&Type>>> {
+        let subtypes = match self.get_subtypes_inner(name.as_ref()) {
+            Some(x) => x,
+            None => return Ok(None),
+        };
 
-        res.map_or(Ok(None), |v| v.map(Some))
+        let mut types = Vec::new();
+        for st in subtypes {
+            let ty = self.get_type(&st).context("invalid type name")?;
+            types.push(ty);
+        }
+
+        Ok(Some(types))
     }
 
     /// Get a list of a type's subtypes, None if the type is nonexistent, Err if any of the

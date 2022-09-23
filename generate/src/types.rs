@@ -1,23 +1,45 @@
-use crate::{schema::Type, MultiTypes, INPUT_FILE};
-use anyhow::{anyhow, Result};
+use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE};
+use anyhow::{anyhow, Ok, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
+use std::sync::Arc;
 
 /// Generator for the "types" source file
 pub(crate) struct GenerateTypes<'a> {
-    spec: &'a Spec,
+    spec: Arc<Spec>,
     multitypes: MultiTypes,
+    choose_type: ChooseType<'a>,
 }
 
 impl<'a> GenerateTypes<'a> {
     /// Instantiate a new GenerateTypes using api spec and enum type mapping
-    pub(crate) fn new(spec: &'a Spec, multitypes: MultiTypes) -> Self {
+    pub(crate) fn new(spec: Arc<Spec>, multitypes: MultiTypes) -> Self {
         Self {
-            spec,
+            spec: Arc::clone(&spec),
             multitypes: multitypes.clone(),
+            choose_type: ChooseType::new(spec, |opts| {
+                let types = opts.types;
+                let is_media = opts.is_media;
+                let name = opts.name;
+                let nested = opts.nested;
+                let mytype = &types[0];
+                if is_inputfile_types(types) || (is_media && name == "media") {
+                    INPUT_FILE.to_owned()
+                } else {
+                    if is_chatid(types) {
+                        "i64".to_owned()
+                    } else if types.len() > 1 {
+                        get_multitype_name_types(&name, types)
+                    } else if nested == 0 {
+                        type_mapper(&mytype)
+                    } else {
+                        mytype[ARRAY_OF.len() * nested..].to_owned()
+                    }
+                }
+            }),
         }
     }
     pub(crate) fn generate_types(&self) -> Result<String> {
@@ -64,6 +86,8 @@ impl<'a> GenerateTypes<'a> {
                 .as_slice(),
             &"GlobalTypes",
         )?;
+
+        let extra = self.generate_method_multitypes()?;
         let uses = self.generate_use()?;
         let res = quote! {
             #uses
@@ -72,6 +96,7 @@ impl<'a> GenerateTypes<'a> {
             #( #impls )*
             #enums
             #typeenums
+            #extra
         };
         Ok(res)
     }
@@ -95,7 +120,7 @@ impl<'a> GenerateTypes<'a> {
                       match self {
                        InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
                            let attach = format!("attach://{}", name);
-                           let form = data.part(name, Part::bytes(bytes));
+                           let form = data.part(name, Part::bytes(bytes).file_name(""));
                            Ok((form, attach))
                        }
                        InputFile::String(name) => Ok((data, name)),
@@ -107,6 +132,28 @@ impl<'a> GenerateTypes<'a> {
         } else {
             Ok(quote!())
         }
+    }
+
+    /// Method return types could contain multitypes not generated here normally
+    fn generate_method_multitypes(&self) -> Result<TokenStream> {
+        let res = self
+            .spec
+            .methods
+            .values()
+            .filter(|m| {
+                let key = m
+                    .returns
+                    .iter()
+                    .map(|t| get_type_name_str(t))
+                    .collect::<Vec<String>>()
+                    .join("");
+
+                !self.multitypes.read().unwrap().contains_key(&key)
+            })
+            .map(|m| &m.returns)
+            .map(|r| self.generate_multitype_enum_return(r).unwrap());
+
+        Ok(quote! { #( #res )* })
     }
 
     /// If a type is a subtype of InputMedia generate multipart/form-data handler method as well
@@ -128,6 +175,37 @@ impl<'a> GenerateTypes<'a> {
             Ok(q)
         } else {
             Ok(quote!())
+        }
+    }
+
+    fn generate_multitype_enum_return(&self, types: &[String]) -> Result<TokenStream> {
+        if types.len() < 2 {
+            Ok(quote!())
+        } else if types.iter().all(|v| !is_primative(v)) {
+            Ok(quote!())
+        } else {
+            let res = if !is_inputfile_types(&types) {
+                if let Some(name) = self.get_multitype_name_return(&types) {
+                    let t = self.generate_enum_str(&types, &name)?;
+
+                    if !is_json_types(types) {
+                        let typeiter = types.iter().map(|t| get_type_name_str(t));
+                        let types = generate_fmt_display_enum(&name, typeiter);
+                        quote! {
+                            #t
+                            #types
+                        }
+                    } else {
+                        t
+                    }
+                } else {
+                    quote!()
+                }
+            } else {
+                quote!()
+            };
+
+            Ok(res)
         }
     }
 
@@ -179,6 +257,33 @@ impl<'a> GenerateTypes<'a> {
         }
 
         Ok(tokens)
+    }
+
+    fn get_multitype_name_return(&self, types: &[String]) -> Option<String> {
+        let mut multitypes = self
+            .multitypes
+            .write()
+            .expect("failed to lock write access");
+        let key = types
+            .iter()
+            .map(|t| get_type_name_str(t))
+            .collect::<Vec<String>>()
+            .join("");
+        if is_inputfile_types(types) {
+            Some(INPUT_FILE.to_owned())
+        } else {
+            if let None = multitypes.get(&key) {
+                let name = types
+                    .iter()
+                    .map(|t| get_type_name_str(&t))
+                    .collect::<Vec<String>>()
+                    .join("");
+                multitypes.insert(key, name.clone());
+                Some(name)
+            } else {
+                None
+            }
+        }
     }
 
     /// Helper method for generating a name for a multitype enum while storing it in the mapping
@@ -278,15 +383,19 @@ impl<'a> GenerateTypes<'a> {
     where
         T: AsRef<str>,
     {
-        let supertype = self
-            .spec
+        let spec = self.spec.clone();
+        let supertype = spec
             .get_type(traitname)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", traitname.as_ref());
         let fieldnames = field_iter_str(&supertype, |v| format_ident!("get_{}", v));
         let returnnames = field_iter_str(&supertype, |v| format_ident!("{}", v));
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
-        let fieldtypes = field_iter(&supertype, |v| choose_type(&self.spec, v, &supertype).ok());
+        let fieldtypes = supertype.fields.iter().flat_map(|v| v.iter()).map(|v| {
+            self.choose_type
+                .choose_type(v.types.as_slice(), Some(&supertype), &v.name, !v.required)
+                .ok()
+        });
         let comments = field_iter(&supertype, |v| v.description.into_comment());
 
         let res = quote! {
@@ -304,9 +413,9 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate an impl with getters to allow type erasure
-    fn generate_impl<T>(&self, name: &T) -> Result<TokenStream>
+    fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
     where
-        T: AsRef<str>,
+        T: AsRef<str> + 'a,
     {
         let t = self
             .spec
@@ -317,7 +426,12 @@ impl<'a> GenerateTypes<'a> {
         let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
         let returnnames = field_iter_str(&t, |v| format_ident!("{}", v));
 
-        let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
+        let fieldtypes = field_iter(&t, |v| {
+            let t = self.spec.get_type(name).unwrap();
+            self.choose_type
+                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                .ok()
+        });
         let comments = field_iter(&t, |v| v.description.into_comment());
 
         let form_generator = self.generate_inputmedia_getter(&t)?;
@@ -348,10 +462,15 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate a trait impl for a specific type
-    fn generate_trait(&self, t: &Type) -> Result<TokenStream> {
+    fn generate_trait(&self, t: &'a Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
         let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
-        let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
+
+        let fieldtypes = t.fields.iter().flat_map(|v| v.iter()).map(|v| {
+            self.choose_type
+                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                .ok()
+        });
 
         let comments = field_iter(&t, |v| v.description.into_comment());
         let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
@@ -400,8 +519,12 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
         });
+        let fieldtypes = t.fields.iter().flat_map(|v| v.iter()).map(|v| {
+            self.choose_type
+                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                .ok()
+        });
 
-        let fieldtypes = field_iter(&t, |v| choose_type(&self.spec, v, &t).ok());
         let comments = field_iter(&t, |v| v.description.into_comment());
         let struct_comment = t.description.concat().into_comment();
         let res = quote! {

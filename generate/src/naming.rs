@@ -23,7 +23,7 @@ where
     let t = type_mapper(&t);
     let t = t.to_case(Case::UpperCamel);
     if RESERVED_WORDS.contains(&t.as_str()) {
-        format!("Tg{}", t)
+        format!("Tg{t}")
     } else {
         t
     }
@@ -38,7 +38,7 @@ pub(crate) fn get_type_name(t: &Type) -> String {
 pub(crate) fn get_field_name(f: &Field) -> String {
     let f = f.name.to_case(Case::Snake);
     if RESERVED_WORDS.contains(&f.as_str()) {
-        format!("tg_{}", f)
+        format!("tg_{f}")
     } else {
         f
     }
@@ -48,7 +48,7 @@ pub(crate) fn get_field_name(f: &Field) -> String {
 pub(crate) fn get_method_name(m: &Method) -> String {
     let m = m.name.to_case(Case::Snake);
     if RESERVED_WORDS.contains(&m.as_str()) {
-        format!("tg_{}", m)
+        format!("tg_{m}")
     } else {
         m
     }
