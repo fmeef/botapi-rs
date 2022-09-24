@@ -1,4 +1,4 @@
-use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE};
+use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE, UPDATE};
 use anyhow::{anyhow, Ok, Result};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
@@ -47,12 +47,17 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn preamble(&self) -> Result<TokenStream> {
-        let structs = self.spec.types.values().filter_map(|v| {
+        let structs = self.spec.types.values().map(|v| {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
-                self.generate_struct(&v.name).ok()
+                let s = self.generate_struct(&v.name).unwrap();
+                let update = self.generate_update_ext(v);
+                quote! {
+                    #s
+                    #update
+                }
             } else {
                 if v.name == INPUT_FILE {
-                    Some(self.generate_inputfile_enum())
+                    self.generate_inputfile_enum()
                 } else {
                     let vec = Vec::new();
                     let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
@@ -61,7 +66,8 @@ impl<'a> GenerateTypes<'a> {
                         .filter_map(|v| self.spec.get_type(v))
                         .map(|t| t.name.as_str())
                         .collect::<Vec<&str>>();
-                    self.generate_enum_str(subtypes.as_slice(), &v.name).ok()
+                    self.generate_enum_str(subtypes.as_slice(), &v.name)
+                        .unwrap()
                 }
             }
         });
@@ -109,6 +115,30 @@ impl<'a> GenerateTypes<'a> {
             use anyhow::{anyhow, Result};
             use reqwest::multipart::{Form, Part};
         })
+    }
+
+    /// Generate a special helper type to treat "Update" as an enum
+    fn generate_update_ext(&self, t: &Type) -> TokenStream {
+        if t.name == UPDATE {
+            let fieldnames = field_iter(&t, |f| {
+                let fieldname = get_type_name_str(&f.name);
+                let choose = self
+                    .choose_type
+                    .choose_type(f.types.as_slice(), Some(&t), &f.name, !f.required)
+                    .unwrap();
+                let name = format_ident!("{}", fieldname);
+                quote! {
+                    #name(#choose)
+                }
+            });
+            quote! {
+                pub enum UpdateExt {
+                    #( #fieldnames ),*
+                }
+            }
+        } else {
+            quote!()
+        }
     }
 
     /// Generate special method for generating multipart/form-data for uploaded files. This is only

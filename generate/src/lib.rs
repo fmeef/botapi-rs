@@ -25,6 +25,7 @@ pub struct Generate {
 pub(crate) static MULTITYPE_ENUM_PREFIX: &str = "E";
 pub(crate) static ARRAY_OF: &str = "Array of ";
 pub(crate) static INPUT_FILE: &str = "InputFile";
+pub(crate) static UPDATE: &str = "Update";
 
 impl Generate {
     pub fn new<T: AsRef<str>>(json: T) -> Result<Generate> {
