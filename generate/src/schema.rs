@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::sync::RwLock;
 
 use anyhow::anyhow;
 use anyhow::Context;
@@ -11,6 +13,8 @@ use serde::Deserialize;
 pub(crate) struct Spec {
     pub(crate) types: HashMap<String, Type>,
     pub(crate) methods: HashMap<String, Method>,
+    #[serde(default)]
+    boxed: RwLock<HashSet<String>>,
 }
 
 /// Serde representation of a json method spec
@@ -117,5 +121,15 @@ impl Spec {
             .flatten();
 
         res.map_or(Ok(None), |v| v.map(Some))
+    }
+
+    pub(crate) fn is_boxed<T: AsRef<str>>(&self, t: T) -> bool {
+        let b = self.boxed.read().unwrap();
+        b.contains(t.as_ref())
+    }
+
+    pub(crate) fn box_type<T: Into<String>>(&self, t: T) -> bool {
+        let mut b = self.boxed.write().unwrap();
+        b.insert(t.into())
     }
 }

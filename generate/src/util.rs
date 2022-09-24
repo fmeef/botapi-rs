@@ -341,13 +341,23 @@ impl CycleChecker {
         }
     }
 
-    /// Check a type's field for dependency loops
     fn check_parent(&mut self, parent: &Type, name: &str) -> bool {
+        let boxedcheck = format!("{}{}", name, parent.name);
+        if self.check_parent_i(parent, name) {
+            self.spec.box_type(boxedcheck);
+            true
+        } else {
+            self.spec.is_boxed(boxedcheck)
+        }
+    }
+
+    /// Check a type's field for dependency loops
+    fn check_parent_i(&mut self, parent: &Type, name: &str) -> bool {
         if self.visited.insert(parent.name.clone()) {
             if let Some(field) = &parent.fields {
                 for supertype in field {
                     if let Some(supertype) = self.spec.clone().get_type(&supertype.types[0]) {
-                        if self.check_parent(supertype, &name) {
+                        if self.check_parent_i(supertype, &name) {
                             return true;
                         }
                     }
@@ -355,7 +365,7 @@ impl CycleChecker {
             }
         }
 
-        parent.name == name.as_ref()
+        parent.name == name.as_ref() && !self.spec.is_boxed(format!("{}{}", name, parent.name))
     }
 }
 
