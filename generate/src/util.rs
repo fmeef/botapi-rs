@@ -353,6 +353,10 @@ impl CycleChecker {
 
     /// Check a type's field for dependency loops
     fn check_parent_i(&mut self, parent: &Type, name: &str) -> bool {
+        if self.spec.is_boxed(format!("{}{}", name, parent.name)) {
+            return false;
+        }
+
         if self.visited.insert(parent.name.clone()) {
             if let Some(field) = &parent.fields {
                 for supertype in field {
@@ -365,7 +369,7 @@ impl CycleChecker {
             }
         }
 
-        parent.name == name.as_ref() && !self.spec.is_boxed(format!("{}{}", name, parent.name))
+        parent.name == name.as_ref()
     }
 }
 
