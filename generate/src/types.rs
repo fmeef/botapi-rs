@@ -47,6 +47,15 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn preamble(&self) -> Result<TokenStream> {
+        self.spec.iter_types().for_each(|t| {
+            let mut checker = CycleChecker::new(Arc::clone(&self.spec));
+            if let Some(fields) = t.fields.as_ref() {
+                for field in fields {
+                    checker.check_parent(t, &field.name);
+                }
+            }
+        });
+
         let structs = self.spec.types.values().map(|v| {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
                 let s = self.generate_struct(&v.name).unwrap();

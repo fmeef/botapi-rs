@@ -24,7 +24,7 @@ where
 /// CycleChecker checks a specific type to avoid member "loops" that confuse rustc. For rustc
 /// recursive types have infinite size and trigger a compiler error. We can fix this by running
 /// cycle detection on members and breaking any cycles using a Box<T>
-struct CycleChecker {
+pub(crate) struct CycleChecker {
     spec: Arc<Spec>,
     visited: HashSet<String>,
 }
@@ -334,29 +334,28 @@ where
 }
 
 impl CycleChecker {
-    fn new(spec: Arc<Spec>) -> Self {
+    pub(crate) fn new(spec: Arc<Spec>) -> Self {
         CycleChecker {
             spec,
             visited: HashSet::new(),
         }
     }
 
-    fn check_parent(&mut self, parent: &Type, name: &str) -> bool {
-        let boxedcheck = format!("{}{}", name, parent.name);
-        if self.check_parent_i(parent, name) {
-            self.spec.box_type(boxedcheck);
-            true
+    pub(crate) fn check_parent(&mut self, parent: &Type, name: &str) -> bool {
+        if self.spec.is_boxed(name) {
+            false
         } else {
-            self.spec.is_boxed(boxedcheck)
+            if !self.check_parent_i(parent, name) {
+                self.spec.box_type(name.to_owned());
+                false
+            } else {
+                true
+            }
         }
     }
 
     /// Check a type's field for dependency loops
     fn check_parent_i(&mut self, parent: &Type, name: &str) -> bool {
-        if self.spec.is_boxed(format!("{}{}", name, parent.name)) {
-            return false;
-        }
-
         if self.visited.insert(parent.name.clone()) {
             if let Some(field) = &parent.fields {
                 for supertype in field {
