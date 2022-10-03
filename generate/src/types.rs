@@ -46,6 +46,12 @@ impl<'a> GenerateTypes<'a> {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
 
+    fn permute_types(&self, size: usize, n: usize) {
+        if size == 1 {
+            return;
+        }
+    }
+
     fn preamble(&self) -> Result<TokenStream> {
         let structs = self.spec.types.values().map(|v| {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
