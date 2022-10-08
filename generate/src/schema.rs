@@ -13,14 +13,16 @@ use crate::util::type_mapper;
 
 #[cfg(test)]
 mod tests {
-    use super::{FeedbackArcSet, Spec};
+    use super::{ApxFeedbackArcSet, FeedbackArcSet, Spec};
 
     #[test]
     fn run_to_completion() {
         let json = std::fs::read_to_string("../../telegram-bot-api-spec/api.json").unwrap();
         let spec: Spec = serde_json::from_str(&json).unwrap();
-        let mut f = FeedbackArcSet::new(&spec);
-        f.run();
+        let mut f = ApxFeedbackArcSet::new(&spec);
+        let size = f.run().unwrap().len();
+
+        println!("size {}", size);
     }
 }
 
@@ -74,6 +76,83 @@ struct FeedbackArcSet<'a> {
     memo: HashMap<BTreeSet<&'a Type>, usize>,
     edges: BTreeSet<(&'a Type, &'a Type)>,
     vertices: BTreeSet<&'a Type>,
+}
+
+struct ApxFeedbackArcSet<'a> {
+    edges: BTreeSet<(&'a Type, &'a Type)>,
+    vertices: HashMap<i64, &'a Type>,
+    r_vertices: HashMap<&'a Type, i64>,
+    iter_verticies: Vec<(i64, &'a Type)>,
+}
+
+impl<'a> ApxFeedbackArcSet<'a> {
+    fn new(spec: &'a Spec) -> Self {
+        Self {
+            edges: edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
+            vertices: (0 as i64..spec.types.len() as i64)
+                .zip(spec.iter_types())
+                .collect::<HashMap<i64, &Type>>(),
+            r_vertices: spec
+                .iter_types()
+                .zip(0 as i64..spec.types.len() as i64)
+                .collect::<HashMap<&Type, i64>>(),
+            iter_verticies: (0 as i64..spec.types.len() as i64)
+                .zip(spec.iter_types())
+                .collect::<Vec<(i64, &Type)>>(),
+        }
+    }
+
+    fn is_back_edge(&self, edges: &(&'a Type, &'a Type)) -> Result<bool> {
+        let (v, w) = edges;
+        let v = self
+            .r_vertices
+            .get(v)
+            .ok_or_else(|| anyhow!("bad vertex"))?;
+        let w = self
+            .r_vertices
+            .get(w)
+            .ok_or_else(|| anyhow!("bad vertex"))?;
+        Ok(w < v)
+    }
+
+    fn boxed_arcs(&self) -> BTreeSet<(&'a Type, &'a Type)> {
+        self.edges
+            .iter()
+            .copied()
+            .filter(|edge| self.is_back_edge(edge).unwrap())
+            .collect()
+    }
+
+    fn run(&mut self) -> Result<BTreeSet<(&'a Type, &'a Type)>> {
+        for (pos, vertex) in self.iter_verticies.iter() {
+            let mut val = 0;
+            let mut min = 0;
+            let mut loc = *pos;
+
+            for position in (0..loc - 1).rev() {
+                let w = self
+                    .vertices
+                    .get(&position)
+                    .ok_or_else(|| anyhow!("missing vertex at pos {}", position))?;
+
+                if self.edges.contains(&(vertex, w)) {
+                    val -= 1;
+                } else if self.edges.contains(&(w, vertex)) {
+                    val += 1;
+                }
+
+                if val <= min {
+                    min = val;
+                    loc = position;
+                }
+            }
+
+            self.vertices.insert(loc, &vertex);
+            self.r_vertices.insert(vertex, loc);
+        }
+
+        Ok(self.boxed_arcs())
+    }
 }
 
 impl<'a> FeedbackArcSet<'a> {
@@ -216,30 +295,6 @@ impl Spec {
 
     fn get_subtypes_inner(&self, name: &str) -> Option<&[String]> {
         self.types.get(name)?.subtypes.as_deref()
-    }
-
-    fn check_types(&self, types: &[Type]) -> usize {
-        todo!()
-    }
-
-    fn permute_types_t(&mut self, types: &mut [Type], size: usize) {
-        if size == 1 {
-            let s = self.check_types(types);
-            if s > self.min {
-                self.min = s;
-            }
-            return;
-        }
-
-        for x in 0..size {
-            self.permute_types_t(types, size - 1);
-
-            if size & 2 == 1 {
-                types.swap(0, size - 1);
-            } else {
-                types.swap(x, size - 1);
-            }
-        }
     }
 
     /// Get all subtypes of a type by name, None if the type is nonexistent, Err if the type
