@@ -78,7 +78,7 @@ struct FeedbackArcSet<'a> {
     vertices: BTreeSet<&'a Type>,
 }
 
-struct ApxFeedbackArcSet<'a> {
+pub(crate) struct ApxFeedbackArcSet<'a> {
     edges: BTreeSet<(&'a Type, &'a Type)>,
     vertices: HashMap<i64, &'a Type>,
     r_vertices: HashMap<&'a Type, i64>,
@@ -86,7 +86,7 @@ struct ApxFeedbackArcSet<'a> {
 }
 
 impl<'a> ApxFeedbackArcSet<'a> {
-    fn new(spec: &'a Spec) -> Self {
+    pub(crate) fn new(spec: &'a Spec) -> Self {
         Self {
             edges: edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
             vertices: (0 as i64..spec.types.len() as i64)
@@ -123,7 +123,7 @@ impl<'a> ApxFeedbackArcSet<'a> {
             .collect()
     }
 
-    fn run(&mut self) -> Result<BTreeSet<(&'a Type, &'a Type)>> {
+    pub(crate) fn run(&mut self) -> Result<BTreeSet<(&'a Type, &'a Type)>> {
         for (pos, vertex) in self.iter_verticies.iter() {
             let mut val = 0;
             let mut min = 0;

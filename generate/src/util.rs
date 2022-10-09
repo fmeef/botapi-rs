@@ -343,12 +343,7 @@ impl CycleChecker {
 
     fn check_parent(&mut self, parent: &Type, name: &str) -> bool {
         let boxedcheck = format!("{}{}", name, parent.name);
-        if self.check_parent_i(parent, name) {
-            self.spec.box_type(boxedcheck);
-            true
-        } else {
-            self.spec.is_boxed(boxedcheck)
-        }
+        self.spec.is_boxed(boxedcheck) || parent.name == name
     }
 
     /// Check a type's field for dependency loops

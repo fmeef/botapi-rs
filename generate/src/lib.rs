@@ -5,6 +5,7 @@ use std::{
 
 use crate::schema::Spec;
 use anyhow::Result;
+use schema::ApxFeedbackArcSet;
 
 mod methods;
 #[allow(dead_code)]
@@ -29,8 +30,15 @@ pub(crate) static UPDATE: &str = "Update";
 
 impl Generate {
     pub fn new<T: AsRef<str>>(json: T) -> Result<Generate> {
+        let spec: Spec = serde_json::from_str(json.as_ref())?;
+        let mut fas = ApxFeedbackArcSet::new(&spec);
+        let arcs = fas.run()?;
+        arcs.iter().for_each(|(parent, child)| {
+            let b = format!("{}{}", child.name, parent.name);
+            spec.box_type(b);
+        });
         Ok(Generate {
-            spec: Arc::new(serde_json::from_str(json.as_ref())?),
+            spec: Arc::new(spec),
             multitypes: Arc::new(RwLock::new(HashMap::new())),
         })
     }
