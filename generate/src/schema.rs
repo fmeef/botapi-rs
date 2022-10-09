@@ -77,42 +77,38 @@ struct FeedbackArcSet<'a> {
     edges: BTreeSet<(&'a Type, &'a Type)>,
     vertices: BTreeSet<&'a Type>,
 }
-
 pub(crate) struct ApxFeedbackArcSet<'a> {
     edges: BTreeSet<(&'a Type, &'a Type)>,
-    vertices: HashMap<i64, &'a Type>,
-    r_vertices: HashMap<&'a Type, i64>,
-    iter_verticies: Vec<(i64, &'a Type)>,
+    vertices: Vec<&'a Type>,
 }
 
 impl<'a> ApxFeedbackArcSet<'a> {
     pub(crate) fn new(spec: &'a Spec) -> Self {
         Self {
             edges: edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
-            vertices: (0 as i64..spec.types.len() as i64)
-                .zip(spec.iter_types())
-                .collect::<HashMap<i64, &Type>>(),
-            r_vertices: spec
+            vertices: spec
                 .iter_types()
-                .zip(0 as i64..spec.types.len() as i64)
-                .collect::<HashMap<&Type, i64>>(),
-            iter_verticies: (0 as i64..spec.types.len() as i64)
-                .zip(spec.iter_types())
-                .collect::<Vec<(i64, &Type)>>(),
+                .collect::<BTreeSet<&Type>>()
+                .iter()
+                .copied()
+                .collect::<Vec<&Type>>(),
         }
     }
 
     fn is_back_edge(&self, edges: &(&'a Type, &'a Type)) -> Result<bool> {
         let (v, w) = edges;
-        let v = self
-            .r_vertices
-            .get(v)
-            .ok_or_else(|| anyhow!("bad vertex"))?;
-        let w = self
-            .r_vertices
-            .get(w)
-            .ok_or_else(|| anyhow!("bad vertex"))?;
-        Ok(w < v)
+        let vpos = self
+            .vertices
+            .iter()
+            .position(|i| i == v)
+            .ok_or_else(|| anyhow!("cry"))?;
+        let wpos = self
+            .vertices
+            .iter()
+            .position(|i| i == w)
+            .ok_or_else(|| anyhow!("cry"))?;
+
+        Ok(wpos < vpos)
     }
 
     fn boxed_arcs(&self) -> BTreeSet<(&'a Type, &'a Type)> {
@@ -124,20 +120,22 @@ impl<'a> ApxFeedbackArcSet<'a> {
     }
 
     pub(crate) fn run(&mut self) -> Result<BTreeSet<(&'a Type, &'a Type)>> {
-        for (pos, vertex) in self.iter_verticies.iter() {
+        for pos in 1..self.vertices.len() + 1 {
             let mut val = 0;
             let mut min = 0;
-            let mut loc = *pos;
+            let mut loc = pos;
+            let v = self.vertices.pop().unwrap();
 
-            for position in (0..loc - 1).rev() {
+            for position in (0..(loc - 1)).rev() {
+                print!("{} ", position);
                 let w = self
                     .vertices
-                    .get(&position)
+                    .get(position)
                     .ok_or_else(|| anyhow!("missing vertex at pos {}", position))?;
 
-                if self.edges.contains(&(vertex, w)) {
+                if self.edges.contains(&(v, w)) {
                     val -= 1;
-                } else if self.edges.contains(&(w, vertex)) {
+                } else if self.edges.contains(&(w, v)) {
                     val += 1;
                 }
 
@@ -147,8 +145,8 @@ impl<'a> ApxFeedbackArcSet<'a> {
                 }
             }
 
-            self.vertices.insert(loc, &vertex);
-            self.r_vertices.insert(vertex, loc);
+            self.vertices.insert(loc, v);
+            println!("\n\n\nlen {}", self.vertices.len());
         }
 
         Ok(self.boxed_arcs())
