@@ -10,7 +10,8 @@ use serde::Deserialize;
 
 #[cfg(test)]
 mod tests {
-    use super::{ApxFeedbackArcSet, Spec};
+    use super::{ApxFeedbackArcSet, Spec, Type};
+    use std::collections::BTreeSet;
 
     #[test]
     fn run_to_completion() {
@@ -20,6 +21,10 @@ mod tests {
         let size = f.run().unwrap().len();
 
         println!("size {}", size);
+
+        // Really conservative measure of success, ensure < 1/8th of all types are boxed
+        let vs = spec.iter_types().collect::<BTreeSet<&Type>>().len() / 8;
+        assert!(size < vs);
     }
 }
 
