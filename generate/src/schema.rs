@@ -8,12 +8,9 @@ use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 
-use crate::util::is_primative;
-use crate::util::type_mapper;
-
 #[cfg(test)]
 mod tests {
-    use super::{ApxFeedbackArcSet, FeedbackArcSet, Spec};
+    use super::{ApxFeedbackArcSet, Spec};
 
     #[test]
     fn run_to_completion() {
@@ -26,6 +23,7 @@ mod tests {
     }
 }
 
+#[allow(dead_code)]
 fn all_vertex_sets<'a>(
     sets: &[&'a Type],
     setindex: usize,
@@ -72,6 +70,7 @@ fn edges_iter<'a>(spec: &'a Spec) -> impl Iterator<Item = (&'a Type, &'a Type)> 
         .flatten()
 }
 
+#[allow(dead_code)]
 struct FeedbackArcSet<'a> {
     memo: HashMap<BTreeSet<&'a Type>, usize>,
     edges: BTreeSet<(&'a Type, &'a Type)>,
@@ -127,7 +126,6 @@ impl<'a> ApxFeedbackArcSet<'a> {
             let v = self.vertices.pop().unwrap();
 
             for position in (0..(loc - 1)).rev() {
-                print!("{} ", position);
                 let w = self
                     .vertices
                     .get(position)
@@ -146,13 +144,13 @@ impl<'a> ApxFeedbackArcSet<'a> {
             }
 
             self.vertices.insert(loc, v);
-            println!("\n\n\nlen {}", self.vertices.len());
         }
 
         Ok(self.boxed_arcs())
     }
 }
 
+#[allow(dead_code)]
 impl<'a> FeedbackArcSet<'a> {
     fn new(spec: &'a Spec) -> Self {
         Self {
@@ -341,5 +339,10 @@ impl Spec {
     pub(crate) fn box_type<T: Into<String>>(&self, t: T) -> bool {
         let mut b = self.boxed.write().unwrap();
         b.insert(t.into())
+    }
+
+    pub(crate) fn check_parent(&self, parent: &Type, name: &str) -> bool {
+        let boxedcheck = format!("{}{}", name, parent.name);
+        self.is_boxed(boxedcheck) || parent.name == name
     }
 }

@@ -5,7 +5,6 @@ use crate::{
 };
 use anyhow::Result;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
-use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) trait ChooserFn {
@@ -19,14 +18,6 @@ where
     fn cb<'b, 'c>(self: &Self, types: &TypeChooserOpts<'b, 'c>) -> String {
         self(types)
     }
-}
-
-/// CycleChecker checks a specific type to avoid member "loops" that confuse rustc. For rustc
-/// recursive types have infinite size and trigger a compiler error. We can fix this by running
-/// cycle detection on members and breaking any cycles using a Box<T>
-struct CycleChecker {
-    spec: Arc<Spec>,
-    visited: HashSet<String>,
 }
 
 /// Check if a field is an "InputFile" for special treatment
@@ -182,7 +173,6 @@ impl<'a> ChooseType<'a> {
         T: AsRef<str>,
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
-        let mut checker = CycleChecker::new(Arc::clone(&self.spec));
         let nested = is_array(&types[0]);
         let opts = TypeChooserOpts {
             types,
@@ -212,7 +202,7 @@ impl<'a> ChooseType<'a> {
                 quote.extend(vec);
             }
             let checked = if let Some(parent) = parent {
-                checker.check_parent(parent, &mytype)
+                self.spec.check_parent(parent, &mytype)
             } else {
                 false
             };
@@ -241,7 +231,7 @@ impl<'a> ChooseType<'a> {
                 res.to_token_stream()
             };
             let checked = if let Some(parent) = parent {
-                checker.check_parent(parent, &mytype)
+                self.spec.check_parent(parent, &mytype)
             } else {
                 false
             };
@@ -330,41 +320,6 @@ where
         "Boolean" => "bool",
         "Float" => "f64",
         x => x,
-    }
-}
-
-impl CycleChecker {
-    fn new(spec: Arc<Spec>) -> Self {
-        CycleChecker {
-            spec,
-            visited: HashSet::new(),
-        }
-    }
-
-    fn check_parent(&mut self, parent: &Type, name: &str) -> bool {
-        let boxedcheck = format!("{}{}", name, parent.name);
-        self.spec.is_boxed(boxedcheck) || parent.name == name
-    }
-
-    /// Check a type's field for dependency loops
-    fn check_parent_i(&mut self, parent: &Type, name: &str) -> bool {
-        if self.spec.is_boxed(format!("{}{}", name, parent.name)) {
-            return false;
-        }
-
-        if self.visited.insert(parent.name.clone()) {
-            if let Some(field) = &parent.fields {
-                for supertype in field {
-                    if let Some(supertype) = self.spec.clone().get_type(&supertype.types[0]) {
-                        if self.check_parent_i(supertype, &name) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-
-        parent.name == name.as_ref()
     }
 }
 

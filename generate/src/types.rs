@@ -42,14 +42,9 @@ impl<'a> GenerateTypes<'a> {
             }),
         }
     }
+
     pub(crate) fn generate_types(&self) -> Result<String> {
         Ok(self.preamble()?.into_token_stream().to_string())
-    }
-
-    fn permute_types(&self, size: usize, n: usize) {
-        if size == 1 {
-            return;
-        }
     }
 
     fn preamble(&self) -> Result<TokenStream> {
