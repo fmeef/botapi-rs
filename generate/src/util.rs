@@ -174,6 +174,7 @@ impl<'a> ChooseType<'a> {
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
+
         let opts = TypeChooserOpts {
             types,
             is_media,
@@ -183,6 +184,13 @@ impl<'a> ChooseType<'a> {
 
         let mytype = self.type_chooser.cb(&opts);
         let mytype = type_mapper(&mytype);
+
+        let checked = if let Some(parent) = parent {
+            self.spec.check_parent(parent, &mytype)
+        } else {
+            false
+        };
+
         let nested = is_array(&mytype);
         let t = if nested > 0 {
             let mytype = type_without_array(&mytype);
@@ -201,11 +209,6 @@ impl<'a> ChooseType<'a> {
                 };
                 quote.extend(vec);
             }
-            let checked = if let Some(parent) = parent {
-                self.spec.check_parent(parent, &mytype)
-            } else {
-                false
-            };
 
             if checked && !(is_media && name.as_ref() == "media") {
                 quote.extend(quote! {
@@ -230,11 +233,7 @@ impl<'a> ChooseType<'a> {
             } else {
                 res.to_token_stream()
             };
-            let checked = if let Some(parent) = parent {
-                self.spec.check_parent(parent, &mytype)
-            } else {
-                false
-            };
+
             if checked && !(is_media && name.as_ref() == "media") {
                 quote! {
                     Box<#res>
@@ -297,21 +296,8 @@ where
 }
 
 /// Map api spec REST types onto native rust types
-pub(crate) fn type_mapper<T>(field: &T) -> String
-where
-    T: AsRef<str>,
-{
-    match field.as_ref() {
-        "Integer" => "i64".to_owned(),
-        "Boolean" => "bool".to_owned(),
-        "Float" => "f64".to_owned(),
-        _ => field.as_ref().to_owned(),
-    }
-}
-
-/// Map api spec REST types onto native rust types
 #[allow(dead_code)]
-pub(crate) fn type_mapper_v2<T>(field: &T) -> &str
+pub(crate) fn type_mapper<T>(field: &T) -> &str
 where
     T: AsRef<str>,
 {

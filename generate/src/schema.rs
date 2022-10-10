@@ -28,6 +28,7 @@ mod tests {
     }
 }
 
+/// generate every proper subset of a given size of a set of types
 #[allow(dead_code)]
 fn all_vertex_sets<'a>(
     sets: &[&'a Type],
@@ -59,6 +60,7 @@ fn all_vertex_sets<'a>(
     all_vertex_sets(sets, setindex + 1, size, dataindex, data, out);
 }
 
+/// Convert a spec's types into an iterator over edges in the type digraph
 fn edges_iter<'a>(spec: &'a Spec) -> impl Iterator<Item = (&'a Type, &'a Type)> {
     spec.iter_types()
         .filter_map(move |t| {
@@ -75,18 +77,25 @@ fn edges_iter<'a>(spec: &'a Spec) -> impl Iterator<Item = (&'a Type, &'a Type)> 
         .flatten()
 }
 
+/// Failed attempt at a dynamic programming based exact solution to minimum feedback arc set
+/// This runs in exponential time + exponential space, which is unusable with the size of
+/// telegram's type set. This is just kept around because its cool. Its unused
 #[allow(dead_code)]
 struct FeedbackArcSet<'a> {
     memo: HashMap<BTreeSet<&'a Type>, usize>,
     edges: BTreeSet<(&'a Type, &'a Type)>,
     vertices: BTreeSet<&'a Type>,
 }
+
+/// Approximation for minimum feedback arc set that runs in polynomial time.
+/// pirated from SortFAS in http://www.vldb.org/pvldb/vol10/p133-simpson.pdf
 pub(crate) struct ApxFeedbackArcSet<'a> {
     edges: BTreeSet<(&'a Type, &'a Type)>,
     vertices: Vec<&'a Type>,
 }
 
 impl<'a> ApxFeedbackArcSet<'a> {
+    /// Construct a FeedbackArcSet solver from a spec reference
     pub(crate) fn new(spec: &'a Spec) -> Self {
         Self {
             edges: edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
@@ -99,6 +108,7 @@ impl<'a> ApxFeedbackArcSet<'a> {
         }
     }
 
+    /// Check if an edge is pointing backwards in the sorted linear arrangement
     fn is_back_edge(&self, edges: &(&'a Type, &'a Type)) -> Result<bool> {
         let (v, w) = edges;
         let vpos = self
@@ -115,6 +125,7 @@ impl<'a> ApxFeedbackArcSet<'a> {
         Ok(wpos < vpos)
     }
 
+    /// Count backwards edges and return them
     fn boxed_arcs(&self) -> BTreeSet<(&'a Type, &'a Type)> {
         self.edges
             .iter()
@@ -123,6 +134,7 @@ impl<'a> ApxFeedbackArcSet<'a> {
             .collect()
     }
 
+    /// Run the approximation. Return edges we should remove
     pub(crate) fn run(&mut self) -> Result<BTreeSet<(&'a Type, &'a Type)>> {
         for pos in 1..self.vertices.len() + 1 {
             let mut val = 0;
@@ -336,16 +348,19 @@ impl Spec {
         res.map_or(Ok(None), |v| v.map(Some))
     }
 
+    /// Check a type by name to see if it should be Box<T> to avoid loops
     pub(crate) fn is_boxed<T: AsRef<str>>(&self, t: T) -> bool {
         let b = self.boxed.read().unwrap();
         b.contains(t.as_ref())
     }
 
+    /// Mark a type by name as boxed
     pub(crate) fn box_type<T: Into<String>>(&self, t: T) -> bool {
         let mut b = self.boxed.write().unwrap();
         b.insert(t.into())
     }
 
+    /// Check if a field (by field name) should be Box<T>
     pub(crate) fn check_parent(&self, parent: &Type, name: &str) -> bool {
         let boxedcheck = format!("{}{}", name, parent.name);
         self.is_boxed(boxedcheck) || parent.name == name

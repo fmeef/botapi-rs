@@ -34,7 +34,7 @@ impl<'a> GenerateTypes<'a> {
                     } else if types.len() > 1 {
                         get_multitype_name_types(&name, types)
                     } else if nested == 0 {
-                        type_mapper(&mytype)
+                        type_mapper(&mytype).to_owned()
                     } else {
                         mytype[ARRAY_OF.len() * nested..].to_owned()
                     }
@@ -356,7 +356,7 @@ impl<'a> GenerateTypes<'a> {
         let types_iter = types
             .iter()
             .map(|v| type_without_array(v))
-            .map(|v| type_mapper(&v))
+            .map(|v| type_mapper(&v).to_owned())
             .map(|v| format_ident!("{}", v));
         let name = format_ident!("{}", name.as_ref());
         let e = quote! {
