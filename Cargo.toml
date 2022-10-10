@@ -16,6 +16,9 @@ tokio = { version = "1.19.0", features = ["net", "socket2", "io-util", "tokio-ma
 rustfmt = "0.10.0"
 serde_path_to_error = "0.1.8"
 serde_urlencoded = "0.7.1"
+async-stream = "0.3.3"
+futures-core = {version = "0.3.24", features = [ "cfg-target-has-atomic" ] }
+futures-util = "0.3.24"
 
 [build-dependencies]
 generate = { path = "./generate" }
