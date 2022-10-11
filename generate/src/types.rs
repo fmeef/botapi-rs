@@ -584,12 +584,12 @@ impl<'a> GenerateTypes<'a> {
             if f.required {
                 quote! {
                     #[serde(rename = #v)]
-                    #name
+                    pub #name
                 }
             } else {
                 quote! {
                     #[serde(skip_serializing_if = "Option::is_none", rename = #v)]
-                    #name
+                    pub #name
                 }
             }
         });
