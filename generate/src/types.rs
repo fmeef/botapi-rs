@@ -52,9 +52,11 @@ impl<'a> GenerateTypes<'a> {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
                 let s = self.generate_struct(&v.name).unwrap();
                 let update = self.generate_update_ext(v);
+                let from = self.generate_from_update_ext(v);
                 quote! {
                     #s
                     #update
+                    #from
                 }
             } else {
                 if v.name == INPUT_FILE {
@@ -121,21 +123,61 @@ impl<'a> GenerateTypes<'a> {
     /// Generate a special helper type to treat "Update" as an enum
     fn generate_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
-            let fieldnames = field_iter(&t, |f| {
-                let fieldname = get_type_name_str(&f.name);
-                let choose = self
-                    .choose_type
-                    .choose_type(f.types.as_slice(), Some(&t), &f.name, !f.required)
-                    .unwrap();
-                let name = format_ident!("{}", fieldname);
-                quote! {
-                    #name(#choose)
-                }
-            });
+            let fieldnames = t
+                .fields
+                .iter()
+                .flat_map(|v| v.iter())
+                .filter(|f| f.name != "update_id")
+                .map(|f| {
+                    let fieldname = get_type_name_str(&f.name);
+                    let choose = self
+                        .choose_type
+                        .choose_type(f.types.as_slice(), Some(&t), &f.name, false)
+                        .unwrap();
+                    let name = format_ident!("{}", fieldname);
+                    quote! {
+                        #name(#choose)
+                    }
+                });
             quote! {
                 pub enum UpdateExt {
-                    #( #fieldnames ),*
+                    #( #fieldnames ),*,
+                    Invalid
                 }
+            }
+        } else {
+            quote!()
+        }
+    }
+
+    /// Generate From<Update> impl for UpdateExt
+    fn generate_from_update_ext(&self, t: &Type) -> TokenStream {
+        if t.name == UPDATE {
+            let fieldnames = t
+                .fields
+                .iter()
+                .flat_map(|v| v.iter())
+                .filter(|f| f.name != "update_id")
+                .map(|f| {
+                    let fieldname = get_field_name(&f);
+                    let extname = get_type_name_str(&f.name);
+                    let name = format_ident!("{}", fieldname);
+                    let extname = format_ident!("{}", extname);
+                    quote! {
+                        if let Some(thing) = update.#name {
+                            return Self::#extname(thing);
+                        }
+                    }
+                });
+
+            quote! {
+               impl From<Update> for UpdateExt {
+                   fn from(update: Update) -> Self {
+                        #( #fieldnames )*
+
+                        Self::Invalid
+                   }
+               }
             }
         } else {
             quote!()
