@@ -115,7 +115,6 @@ impl Webhook {
                     async move {
                         let json = to_bytes(body).await?;
 
-                        eprintln!("request");
                         if let Ok(update) = serde_json::from_slice::<Update>(&json) {
                             tx.send(update).await?;
                         }
@@ -131,8 +130,7 @@ impl Webhook {
 
         if let Err(err) = self.setup().await {
             self.teardown().await?;
-            eprintln!("err {}", err);
-            //return Err(err);
+            return Err(err);
         }
 
         let s = stream! {
