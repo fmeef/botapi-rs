@@ -5,6 +5,7 @@ use botapi::{bot::Bot, gen_types::FileData};
 async fn main() -> Result<()> {
     let token = std::env::var("TOKEN")?;
     let bot = Bot::new(token)?;
+    bot.delete_webhook(None).await?;
     let mut offset = 0;
     loop {
         let update = bot.get_updates(Some(offset), None, None, None).await?;
