@@ -486,6 +486,81 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
+    fn generate_constructor<T>(&self, name: T) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        let t = self
+            .spec
+            .get_type(&name.as_ref())
+            .ok_or_else(|| anyhow!("type not found"))?;
+        if t.fields.as_ref().map_or(0, |f| f.len()) == 0 {
+            Ok(quote!())
+        } else {
+            let fieldtypes = t
+                .fields
+                .iter()
+                .flat_map(|v| v.iter().filter(|f| f.name != "type"))
+                .map(|v| {
+                    self.choose_type
+                        .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                        .ok()
+                });
+            let fieldnames = t
+                .fields
+                .iter()
+                .flat_map(|v| {
+                    v.iter()
+                        .filter(|f| f.name != "type")
+                        .map(|f| get_field_name(f))
+                })
+                .map(|v| format_ident!("{}", v));
+            let tgtype = t.fields.as_ref().map_or_else(
+                || quote!(),
+                |f| {
+                    f.iter().find(|n| n.name == "type").map_or_else(
+                        || quote!(),
+                        |f| {
+                            let search = "must be ";
+                            let typename = if let Some(index) = f.description.find(search) {
+                                &f.description[index + search.len()..]
+                            } else {
+                                &t.name
+                            };
+
+                            if !f.required {
+                                quote! { tg_type: Some(#typename.to_owned()) }
+                            } else {
+                                quote! {
+                                    tg_type: #typename.to_owned(),
+                                }
+                            }
+                        },
+                    )
+                },
+            );
+            let fieldnames_i = t
+                .fields
+                .iter()
+                .flat_map(|v| {
+                    v.iter()
+                        .filter(|f| f.name != "type")
+                        .map(|f| get_field_name(f))
+                })
+                .map(|v| format_ident!("{}", v));
+            let res = quote! {
+                pub fn new( #( #fieldnames: #fieldtypes ),* ) -> Self {
+                    Self {
+                        #tgtype
+                        #( #fieldnames_i ),*
+                    }
+                }
+            };
+
+            Ok(res)
+        }
+    }
+
     /// Generate an impl with getters to allow type erasure
     fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
     where
@@ -510,6 +585,7 @@ impl<'a> GenerateTypes<'a> {
 
         let form_generator = self.generate_inputmedia_getter(&t)?;
         let inputmedia_generator = self.generate_inputfile_getter(&t)?;
+        let constructor = self.generate_constructor(name)?;
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
             quote! {
@@ -519,6 +595,7 @@ impl<'a> GenerateTypes<'a> {
             quote! {
                 #[allow(dead_code)]
                 impl #typename {
+                    #constructor
                     #(
                         #comments
                         pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
@@ -584,12 +661,12 @@ impl<'a> GenerateTypes<'a> {
             if f.required {
                 quote! {
                     #[serde(rename = #v)]
-                    pub #name
+                    #name
                 }
             } else {
                 quote! {
                     #[serde(skip_serializing_if = "Option::is_none", rename = #v)]
-                    pub #name
+                    #name
                 }
             }
         });
