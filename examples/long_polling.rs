@@ -1,7 +1,6 @@
 use anyhow::Result;
 use botapi::{bot::Bot, ext::LongPoller};
 use futures_util::stream::StreamExt;
-use std::iter::Iterator;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -11,8 +10,8 @@ async fn main() -> Result<()> {
     let poller = LongPoller::new(&bot);
     let mut res = poller.get_updates().await;
 
-    while let Some(update) = res.next().await {
-        update.iter().for_each(|_| println!("update"));
+    while let Some(Ok(update)) = res.next().await {
+        println!("update {}", update.get_update_id());
     }
     Ok(())
 }

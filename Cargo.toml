@@ -19,6 +19,7 @@ serde_urlencoded = "0.7.1"
 async-stream = "0.3.3"
 futures-core = {version = "0.3.24", features = [ "cfg-target-has-atomic" ] }
 futures-util = "0.3.24"
+hyper = { version = "0.14.20", features = ["stream", "server", "runtime", "http2"] }
 
 [build-dependencies]
 generate = { path = "./generate" }
