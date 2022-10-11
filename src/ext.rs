@@ -1,4 +1,3 @@
-use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
 use tokio::sync::mpsc;
@@ -11,7 +10,7 @@ use futures_core::Stream;
 use hyper::body::to_bytes;
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
+use hyper::{Body, Request, Response, Server};
 
 pub struct LongPoller {
     bot: Bot,
@@ -106,8 +105,7 @@ impl Webhook {
             .await
     }
 
-    async fn get_updates(self) -> Result<Pin<Box<impl Stream<Item = Result<Update, Error>>>>> {
-        self.setup().await?;
+    pub async fn get_updates(self) -> Result<Pin<Box<impl Stream<Item = Result<Update, Error>>>>> {
         let (tx, mut rx) = mpsc::channel(128);
         let svc = make_service_fn(move |_: &AddrStream| {
             let tx = tx.clone();
@@ -116,8 +114,11 @@ impl Webhook {
                     let tx = tx.clone();
                     async move {
                         let json = to_bytes(body).await?;
-                        let update: Update = serde_json::from_slice(&json)?;
-                        tx.send(update).await?;
+
+                        eprintln!("request");
+                        if let Ok(update) = serde_json::from_slice::<Update>(&json) {
+                            tx.send(update).await?;
+                        }
                         Ok::<_, Error>(Response::new(Body::from("")))
                     }
                 }))
@@ -127,6 +128,13 @@ impl Webhook {
         let server = Server::bind(&self.addr).serve(svc);
 
         let fut = tokio::task::spawn(async move { server.await });
+
+        if let Err(err) = self.setup().await {
+            self.teardown().await?;
+            eprintln!("err {}", err);
+            //return Err(err);
+        }
+
         let s = stream! {
             while let Some(update) = rx.recv().await {
                 yield Ok(update);
