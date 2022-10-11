@@ -11,7 +11,7 @@ async fn main() -> Result<()> {
     let mut res = poller.get_updates().await;
 
     while let Some(Ok(update)) = res.next().await {
-        println!("update {}", update.get_update_id());
+        println!("update {:?}", update);
     }
     Ok(())
 }

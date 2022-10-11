@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
 use tokio::sync::mpsc;
 
+use crate::gen_types::UpdateExt;
 use crate::{bot::Bot, gen_types::Update};
 use anyhow::Result;
 use anyhow::{anyhow, Error};
@@ -27,7 +28,7 @@ impl LongPoller {
     }
 
     /// Return an async stream of updates, terminating with error
-    pub async fn get_updates(mut self) -> Pin<Box<impl Stream<Item = Result<Update, Error>>>> {
+    pub async fn get_updates(mut self) -> Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>> {
         let s = stream! {
             loop {
                 let update = self.bot.get_updates(Some(self.offset), None, None, None).await?;
@@ -37,7 +38,7 @@ impl LongPoller {
                     if id > max {
                         max = id;
                     }
-                    yield Ok(update);
+                    yield Ok(update.into());
                 }
 
                 self.offset = max + 1;
@@ -111,7 +112,9 @@ impl Webhook {
 
     /// Return an async stream of updates, terminating with error. Webhooks are enabled on
     /// startup and disabled on error.
-    pub async fn get_updates(self) -> Result<Pin<Box<impl Stream<Item = Result<Update, Error>>>>> {
+    pub async fn get_updates(
+        self,
+    ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>>> {
         let (tx, mut rx) = mpsc::channel(128);
         let svc = make_service_fn(move |_: &AddrStream| {
             let tx = tx.clone();
@@ -122,7 +125,7 @@ impl Webhook {
                         let json = to_bytes(body).await?;
 
                         if let Ok(update) = serde_json::from_slice::<Update>(&json) {
-                            tx.send(update).await?;
+                            tx.send(update.into()).await?;
                         }
                         Ok::<_, Error>(Response::new(Body::from("")))
                     }

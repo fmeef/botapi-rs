@@ -140,6 +140,7 @@ impl<'a> GenerateTypes<'a> {
                     }
                 });
             quote! {
+                #[derive(Debug)]
                 pub enum UpdateExt {
                     #( #fieldnames ),*,
                     Invalid
