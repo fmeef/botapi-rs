@@ -268,7 +268,7 @@ where
 
 pub(crate) fn is_json_types(types: &[String]) -> bool {
     for t in types {
-        for compare in ["Integer", "Boolean", "Float"] {
+        for compare in ["Integer", "Boolean", "Float", "String"] {
             if t.ends_with(compare) && !t.starts_with("Array of") {
                 return false;
             }

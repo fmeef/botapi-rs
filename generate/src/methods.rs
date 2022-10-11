@@ -124,7 +124,7 @@ impl<'a> GenerateMethods<'a> {
                 }
             });
             let types = fields.iter().filter_map(|f| {
-                if is_json(&f) {
+                if is_json(&f) || is_inputfile(&f) {
                     let res = quote! {
                         String
                     };
