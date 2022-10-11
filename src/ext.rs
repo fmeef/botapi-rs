@@ -12,6 +12,7 @@ use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 
+/// Helper for fetching updates via long polling.
 pub struct LongPoller {
     bot: Bot,
     offset: i64,
@@ -25,6 +26,7 @@ impl LongPoller {
         }
     }
 
+    /// Return an async stream of updates, terminating with error
     pub async fn get_updates(mut self) -> Pin<Box<impl Stream<Item = Result<Update, Error>>>> {
         let s = stream! {
             loop {
@@ -51,6 +53,8 @@ pub enum BotUrl {
     Host(String),
 }
 
+/// Helper for fetching updates via webhook. This currently requires a reverse proxy as
+/// tls is not supported.
 pub struct Webhook {
     bot: Bot,
     url: BotUrl,
@@ -105,6 +109,8 @@ impl Webhook {
             .await
     }
 
+    /// Return an async stream of updates, terminating with error. Webhooks are enabled on
+    /// startup and disabled on error.
     pub async fn get_updates(self) -> Result<Pin<Box<impl Stream<Item = Result<Update, Error>>>>> {
         let (tx, mut rx) = mpsc::channel(128);
         let svc = make_service_fn(move |_: &AddrStream| {
