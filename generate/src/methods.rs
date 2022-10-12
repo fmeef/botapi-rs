@@ -93,8 +93,21 @@ impl<'a> GenerateMethods<'a> {
                 }
             });
 
+        let lifetime = if method.fields.as_ref().map_or(0, |f| f.len()) == 0
+            || method
+                .fields
+                .as_ref()
+                .map_or(false, |f| f.iter().all(|f| is_json(f) || is_inputfile(f)))
+        {
+            quote!()
+        } else {
+            quote! {
+                <'a>
+            }
+        };
+
         quote! {
-            impl #structname {
+            impl #lifetime #structname #lifetime {
                 #[allow(dead_code)]
                 fn get_form(self, form: Form) -> Form {
                     #( #json_value )*
@@ -133,13 +146,22 @@ impl<'a> GenerateMethods<'a> {
                     self.choose_type
                         .get()
                         .unwrap()
-                        .choose_type(&f.types, None, &f.name, !f.required)
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a  })
                         .ok()
                 }
             });
+
+            let lifetime = if fields.iter().all(|f| is_json(f) || is_inputfile(f)) {
+                quote!()
+            } else {
+                quote! {
+                    <'a>
+                }
+            };
+
             quote! {
-                #[derive(Serialize, Deserialize, Debug)]
-                struct #structname {
+                #[derive(Serialize, Debug)]
+                struct #structname #lifetime {
                     #(
                         #typenames : #types
                     ),*
@@ -147,7 +169,7 @@ impl<'a> GenerateMethods<'a> {
             }
         } else {
             quote! {
-                #[derive(Serialize, Deserialize, Debug)]
+                #[derive(Serialize, Debug)]
                 struct #structname();
             }
         };
@@ -305,7 +327,7 @@ impl<'a> GenerateMethods<'a> {
                     self.choose_type
                         .get()
                         .unwrap()
-                        .choose_type(&f.types, None, &f.name, !f.required)
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
                         .unwrap()
                 }
             });
@@ -316,7 +338,7 @@ impl<'a> GenerateMethods<'a> {
         let comment = method.description.concat().into_comment();
         let res = quote! {
             #comment
-            pub async fn #fn_name (&self, #( #typenames: #types ),*) -> Result<#returntype> {
+            pub async fn #fn_name <'a> (&self, #( #typenames: #types ),*) -> Result<#returntype> {
                 #file_handler
                 #instantiate
                 let resp = #post;
@@ -331,56 +353,7 @@ impl<'a> GenerateMethods<'a> {
 
         Ok(res)
     }
-    /*
-        /// Generate the type for a specific field, depending if we have an array type,
-        /// a api type that needs to be mapped to a native type, or a choice of types that
-        /// should be either narrowed down to owe or turned into an enum type
-        fn choose_type(&self, t: &[String], optional: bool) -> Result<TokenStream> {
-            let mytype = if is_chatid(t) {
-                "i64".to_owned()
-            } else if t.len() > 1 {
-                self.get_multitype_by_vec(t)?.to_owned()
-            } else {
-                t[0].clone()
-            };
 
-            let nested = is_array(&mytype);
-
-            let res = if nested > 0 {
-                let fm = &mytype[ARRAY_OF.len() * nested..];
-                let res = type_mapper(&fm);
-                let res = format_ident!("{}", res);
-                let mut quote = quote!();
-                for _ in 0..nested {
-                    let vec = quote! {
-                        Vec<
-                    };
-                    quote.extend(vec);
-                }
-                quote.extend(quote! {
-                    #res
-                });
-                for _ in 0..nested {
-                    let vec = quote! {
-                        >
-                    };
-                    quote.extend(vec);
-                }
-                quote
-            } else {
-                let mytype = type_mapper(&mytype);
-                let ret = format_ident!("{}", mytype);
-                quote!(#ret)
-            };
-            if optional {
-                Ok(quote! {
-                    Option<#res>
-                })
-            } else {
-                Ok(res)
-            }
-        }
-    */
     fn generate_use(&self) -> TokenStream {
         quote! {
            use anyhow::Result;

@@ -159,9 +159,6 @@ impl<'a> ChooseType<'a> {
         Self { spec, type_chooser }
     }
 
-    /// Generate the type for a specific field, depending if we have an array type,
-    /// a api type that needs to be mapped to a native type, or a choice of types that
-    /// should be either narrowed down to owe or turned into an enum type
     pub(crate) fn choose_type<T>(
         &self,
         types: &[String],
@@ -171,6 +168,45 @@ impl<'a> ChooseType<'a> {
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
+    {
+        self.choose_type_private(
+            types,
+            parent,
+            name,
+            optional,
+            None::<Box<dyn FnOnce() -> TokenStream>>,
+        )
+    }
+
+    pub(crate) fn choose_type_ref<T, F>(
+        &self,
+        types: &[String],
+        parent: Option<&Type>,
+        name: &T,
+        optional: bool,
+        lifetime: F,
+    ) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+        F: FnOnce() -> TokenStream,
+    {
+        self.choose_type_private(types, parent, name, optional, Some(lifetime))
+    }
+
+    /// Generate the type for a specific field, depending if we have an array type,
+    /// a api type that needs to be mapped to a native type, or a choice of types that
+    /// should be either narrowed down to owe or turned into an enum type
+    fn choose_type_private<T, F>(
+        &self,
+        types: &[String],
+        parent: Option<&Type>,
+        name: &T,
+        optional: bool,
+        lifetime: Option<F>,
+    ) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+        F: FnOnce() -> TokenStream,
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
@@ -242,6 +278,14 @@ impl<'a> ChooseType<'a> {
                 quote!(#res)
             }
         };
+
+        let t = if let Some(lifetime) = lifetime {
+            let lifetime = lifetime();
+            quote! { & #lifetime #t }
+        } else {
+            t
+        };
+
         Ok(if optional {
             quote! {
                 Option<#t>
