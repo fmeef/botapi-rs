@@ -31,7 +31,7 @@ impl LongPoller {
     pub async fn get_updates(mut self) -> Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>> {
         let s = stream! {
             loop {
-                let update = self.bot.get_updates(Some(&self.offset), None, None, None).await?;
+                let update = self.bot.get_updates(Some(self.offset), None, None, None).await?;
                 let mut max = 0;
                 for update in update {
                     let id =  *update.get_update_id();
@@ -83,7 +83,7 @@ impl Webhook {
                         Some(&ip.to_string()),
                         None,
                         None,
-                        Some(&self.drop_pending_updates),
+                        Some(self.drop_pending_updates),
                         None,
                     )
                     .await
@@ -96,7 +96,7 @@ impl Webhook {
                         None,
                         None,
                         None,
-                        Some(&self.drop_pending_updates),
+                        Some(self.drop_pending_updates),
                         None,
                     )
                     .await
@@ -106,7 +106,7 @@ impl Webhook {
 
     async fn teardown(&self) -> Result<bool> {
         self.bot
-            .delete_webhook(Some(&self.drop_pending_updates))
+            .delete_webhook(Some(self.drop_pending_updates))
             .await
     }
 

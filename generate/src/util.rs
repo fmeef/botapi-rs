@@ -11,6 +11,11 @@ pub(crate) trait ChooserFn {
     fn cb<'b, 'c>(self: &Self, types: &TypeChooserOpts<'b, 'c>) -> String;
 }
 
+pub(crate) fn no_lifetime(f: &Field) -> bool {
+    let l = is_json(f) || is_inputfile(f);
+    l || f.types.iter().any(|t| is_primative(t))
+}
+
 impl<F> ChooserFn for F
 where
     F: for<'a, 'b, 'c> Fn(&'a TypeChooserOpts<'b, 'c>) -> String,
@@ -210,7 +215,7 @@ impl<'a> ChooseType<'a> {
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
-
+        let primative = is_primative(&type_without_array(&types[0]));
         let opts = TypeChooserOpts {
             types,
             is_media,
@@ -279,9 +284,13 @@ impl<'a> ChooseType<'a> {
             }
         };
 
-        let t = if let Some(lifetime) = lifetime {
-            let lifetime = lifetime();
-            quote! { & #lifetime #t }
+        let t = if !primative {
+            if let Some(lifetime) = lifetime {
+                let lifetime = lifetime();
+                quote! { & #lifetime #t }
+            } else {
+                t
+            }
         } else {
             t
         };

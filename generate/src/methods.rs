@@ -97,7 +97,7 @@ impl<'a> GenerateMethods<'a> {
             || method
                 .fields
                 .as_ref()
-                .map_or(false, |f| f.iter().all(|f| is_json(f) || is_inputfile(f)))
+                .map_or(false, |f| f.iter().all(|f| no_lifetime(f)))
         {
             quote!()
         } else {
@@ -151,7 +151,7 @@ impl<'a> GenerateMethods<'a> {
                 }
             });
 
-            let lifetime = if fields.iter().all(|f| is_json(f) || is_inputfile(f)) {
+            let lifetime = if fields.iter().all(|f| no_lifetime(f)) {
                 quote!()
             } else {
                 quote! {
