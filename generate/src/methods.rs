@@ -39,6 +39,142 @@ impl<'a> GenerateMethods<'a> {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
 
+    fn method_params(&self, method: &Method) -> (Vec<TokenStream>, Vec<TokenStream>) {
+        let typenames = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|f| get_field_name(f))
+            .map(|f| format_ident!("{}", f).to_token_stream());
+        let types = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|f| {
+                if is_inputfile(&f) {
+                    let q = quote! { FileData };
+                    is_optional(f, q).to_token_stream()
+                } else {
+                    self.choose_type
+                        .get()
+                        .unwrap()
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
+                        .unwrap()
+                        .to_token_stream()
+                }
+            });
+
+        (typenames.collect(), types.collect())
+    }
+
+    fn method_params_req(&self, method: &Method) -> (Vec<TokenStream>, Vec<TokenStream>) {
+        let typenames = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|m| m.required)
+            .map(|f| get_field_name(f))
+            .map(|f| format_ident!("{}", f).to_token_stream());
+        let types = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|m| m.required)
+            .map(|f| {
+                if is_inputfile(&f) {
+                    let q = quote! { FileData };
+                    is_optional(f, q).to_token_stream()
+                } else {
+                    self.choose_type
+                        .get()
+                        .unwrap()
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
+                        .unwrap()
+                        .to_token_stream()
+                }
+            });
+
+        (typenames.collect(), types.collect())
+    }
+
+    fn generate_call(&self, method: &Method) -> Result<TokenStream> {
+        let (typenames, _) = self.method_params(method);
+        let returntype = self.choose_type.get().unwrap().choose_type(
+            method.returns.as_slice(),
+            None,
+            &"",
+            false,
+        )?;
+        let name = get_method_name(method);
+        let name = format_ident!("{}", name);
+        let r = method.fields.as_ref().map_or_else(
+            || Vec::new(),
+            |f| {
+                f.iter()
+                    .map(|f| {
+                        if !f.required || is_primative(&f.types[0]) || is_inputfile(f) {
+                            quote!()
+                        } else {
+                            quote! { & }
+                        }
+                    })
+                    .collect()
+            },
+        );
+        let res = quote! {
+            pub async fn build(self) -> Result<#returntype> {
+                self.bot.#name( #( #r self.#typenames ),* ).await
+            }
+        };
+
+        Ok(res)
+    }
+
+    fn generate_call_builder_impl(&self, method: &Method) -> TokenStream {
+        let name = get_type_name_str(&method.name);
+        let name = format_ident!("Call{}", name);
+        let call = self.generate_call(method).unwrap();
+        let (names, types) = self.method_params(method);
+
+        let fields = names
+            .iter()
+            .zip(types.iter())
+            .map(|(fieldname, fieldtype)| {
+                quote! {
+                    pub fn #fieldname(&'a mut self, #fieldname: #fieldtype) -> &'a mut Self {
+                        self.#fieldname = #fieldname;
+                        self
+                    }
+                }
+            });
+
+        quote! {
+            impl <'a> #name<'a> {
+                #( #fields )*
+                #call
+            }
+        }
+    }
+
+    fn generate_call_builder(&self, method: &Method) -> TokenStream {
+        let name = get_type_name_str(&method.name);
+        let name = format_ident!("Call{}", name);
+        let i = self.generate_call_builder_impl(method);
+        let (names, types) = self.method_params(method);
+        quote! {
+            pub struct #name <'a>{
+                bot: &'a Bot,
+                #( #names: #types ),*
+            }
+
+            #i
+        }
+    }
+
     fn generate_into_form(&self, method: &Method) -> TokenStream {
         let structname = get_type_name_str(&method.name);
         let structname = format_ident!("{}Opts", structname);
@@ -307,30 +443,8 @@ impl<'a> GenerateMethods<'a> {
             &"",
             false,
         )?;
-        let typenames = method
-            .fields
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .map(|f| get_field_name(f))
-            .map(|f| format_ident!("{}", f));
-        let types = method
-            .fields
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .map(|f| {
-                if is_inputfile(&f) {
-                    let q = quote! { FileData };
-                    is_optional(f, q)
-                } else {
-                    self.choose_type
-                        .get()
-                        .unwrap()
-                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
-                        .unwrap()
-                }
-            });
+
+        let (typenames, types) = self.method_params(method);
 
         let instantiate = self.instantiate_urlencoding_struct(method)?;
         let file_handler = self.generate_file_handler(method);
@@ -347,6 +461,46 @@ impl<'a> GenerateMethods<'a> {
                     Ok(resp)
                 } else {
                     Err(anyhow::anyhow!(resp.description.unwrap_or_default()))
+                }
+            }
+        };
+
+        Ok(res)
+    }
+
+    fn generate_builder_method(&self, method: &Method) -> Result<TokenStream> {
+        let name = get_method_name(method);
+        let fn_name = format_ident!("build_{}", name);
+        let returntype = get_type_name_str(&method.name);
+        let returntype = format_ident!("Call{}", returntype);
+
+        let (typenames, types) = self.method_params_req(method);
+
+        let nones = method.fields.as_ref().map_or_else(
+            || Vec::new(),
+            |f| {
+                f.iter()
+                    .filter(|f| !f.required)
+                    .map(|f| {
+                        let name = get_field_name(f);
+                        let name = format_ident!("{}", name);
+
+                        quote! {
+                            #name: None
+                        }
+                    })
+                    .collect()
+            },
+        );
+
+        let comment = method.description.concat().into_comment();
+        let res = quote! {
+            #comment
+            pub fn #fn_name <'a> (&'a self, #( #typenames: #types ),*) -> #returntype<'a> {
+                #returntype {
+                    bot: self,
+                    #( #typenames , )*
+                    #( #nones ),*
                 }
             }
         };
@@ -393,12 +547,25 @@ impl<'a> GenerateMethods<'a> {
             .spec
             .methods
             .values()
-            .filter_map(|m| self.generate_method(&m).ok());
+            .map(|m| self.generate_method(&m).unwrap());
+
+        let buildermethods = self
+            .spec
+            .methods
+            .values()
+            .map(|m| self.generate_builder_method(m).unwrap());
+
         let opts = self
             .spec
             .methods
             .values()
-            .filter_map(|m| self.generate_urlencoding_struct(m).ok());
+            .map(|m| self.generate_urlencoding_struct(m).unwrap());
+
+        let calls = self
+            .spec
+            .methods
+            .values()
+            .map(|m| self.generate_call_builder(m));
 
         let forms = self
             .spec
@@ -411,11 +578,17 @@ impl<'a> GenerateMethods<'a> {
 
             #( #opts )*
 
+            #( #calls )*
+
             #( #forms )*
 
             impl Bot {
                 #(
                     #methods
+                )*
+
+                #(
+                    #buildermethods
                 )*
             }
         })

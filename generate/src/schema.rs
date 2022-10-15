@@ -292,12 +292,12 @@ impl Type {
 #[allow(dead_code)]
 impl Spec {
     /// Gets a type from the spec by name, None if nonexistent
-    pub(crate) fn get_type<'a, T: AsRef<str>>(&'a self, name: &T) -> Option<&'a Type> {
+    pub(crate) fn get_type<'a, T: AsRef<str>>(&'a self, name: T) -> Option<&'a Type> {
         self.types.get(name.as_ref())
     }
 
     /// Gets a method from the spec by name, None if nonexistent
-    pub(crate) fn get_method<'a, T: AsRef<str>>(&'a self, name: &T) -> Option<&'a Method> {
+    pub(crate) fn get_method<'a, T: AsRef<str>>(&'a self, name: T) -> Option<&'a Method> {
         self.methods.get(name.as_ref())
     }
 
@@ -329,7 +329,7 @@ impl Spec {
 
     /// Get a list of a type's subtypes, None if the type is nonexistent, Err if any of the
     /// subtypes are nonexistent
-    fn get_subtype_of<'a, T: AsRef<str>>(&'a self, name: &T) -> Result<Option<Vec<&'a Type>>> {
+    fn get_subtype_of<'a, T: AsRef<str>>(&'a self, name: T) -> Result<Option<Vec<&'a Type>>> {
         let res = self
             .types
             .get(name.as_ref())

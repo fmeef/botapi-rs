@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
                     *chat.get_id(),
                     filedata,
                     None,
-                    Some("sad".to_owned()),
+                    Some(&"sad".to_owned()),
                     None,
                     None,
                     None,

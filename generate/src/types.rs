@@ -1,5 +1,6 @@
 use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE, UPDATE};
 use anyhow::{anyhow, Ok, Result};
+use convert_case::{Case, Casing};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::naming::*;
@@ -50,13 +51,16 @@ impl<'a> GenerateTypes<'a> {
     fn preamble(&self) -> Result<TokenStream> {
         let structs = self.spec.types.values().map(|v| {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
-                let s = self.generate_struct(&v.name).unwrap();
+                let s = self.generate_struct(&v.name, &v.name).unwrap();
+                let b = self.generate_builder(&v).unwrap();
                 let update = self.generate_update_ext(v);
                 let from = self.generate_from_update_ext(v);
                 quote! {
                     #s
                     #update
                     #from
+
+                    #b
                 }
             } else {
                 if v.name == INPUT_FILE {
@@ -333,6 +337,62 @@ impl<'a> GenerateTypes<'a> {
         Ok(tokens)
     }
 
+    fn generate_builder(&self, t: &Type) -> Result<TokenStream> {
+        let res = if let Some(fields) = t.fields.as_ref() {
+            let typename = get_type_name(t);
+            let typename_tokens = format_ident!("{}", typename);
+            let buildername = format!("{}Builder", typename);
+            let buildertokens = format_ident!("{}", buildername);
+            let st = self.generate_struct(&t.name, &buildername)?;
+
+            let methods = fields.iter().map(|f| {
+                let name = f.name.to_case(Case::Snake);
+                let name = format_ident!("set_{}", name);
+                let fieldname = get_field_name(f);
+                let fieldname = format_ident!("{}", fieldname);
+                let fieldtype = self
+                    .choose_type
+                    .choose_type(&f.types, Some(t), &f.name, !f.required)
+                    .unwrap();
+                quote! {
+                    pub fn #name (mut self, #fieldname: #fieldtype) -> Self {
+                        self. #fieldname = #fieldname;
+                        self
+                    }
+                }
+            });
+
+            let instantiate = fields.iter().map(|f| {
+                let name = get_field_name(f);
+                let name = format_ident!("{}", name);
+
+                quote! {
+                    #name: self.#name
+                }
+            });
+
+            let constructor = self.generate_constructor(&t.name)?;
+            quote! {
+                #st
+
+                impl #buildertokens {
+                    #constructor
+
+                    #( #methods )*
+
+                    pub fn build(self) -> #typename_tokens {
+                        #typename_tokens {
+                            #( #instantiate ),*
+                        }
+                    }
+                }
+            }
+        } else {
+            quote!()
+        };
+        Ok(res)
+    }
+
     fn get_multitype_name_return(&self, types: &[String]) -> Option<String> {
         let mut multitypes = self
             .multitypes
@@ -486,13 +546,13 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
-    fn generate_constructor<T>(&self, name: T) -> Result<TokenStream>
+    fn generate_constructor<T>(&self, typename: T) -> Result<TokenStream>
     where
         T: AsRef<str>,
     {
         let t = self
             .spec
-            .get_type(&name.as_ref())
+            .get_type(&typename.as_ref())
             .ok_or_else(|| anyhow!("type not found"))?;
         if t.fields.as_ref().map_or(0, |f| f.len()) == 0 {
             Ok(quote!())
@@ -500,7 +560,7 @@ impl<'a> GenerateTypes<'a> {
             let fieldtypes = t
                 .fields
                 .iter()
-                .flat_map(|v| v.iter().filter(|f| f.name != "type"))
+                .flat_map(|v| v.iter().filter(|f| f.name != "type" && f.required))
                 .map(|v| {
                     self.choose_type
                         .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
@@ -511,7 +571,7 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .flat_map(|v| {
                     v.iter()
-                        .filter(|f| f.name != "type")
+                        .filter(|f| f.name != "type" && f.required)
                         .map(|f| get_field_name(f))
                 })
                 .map(|v| format_ident!("{}", v));
@@ -544,15 +604,28 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .flat_map(|v| {
                     v.iter()
-                        .filter(|f| f.name != "type")
+                        .filter(|f| f.name != "type" && f.required)
                         .map(|f| get_field_name(f))
                 })
                 .map(|v| format_ident!("{}", v));
+
+            let nones = t
+                .fields
+                .iter()
+                .flat_map(|v| {
+                    v.iter()
+                        .filter(|f| f.name != "type" && !f.required)
+                        .map(|f| get_field_name(f))
+                })
+                .map(|v| format_ident!("{}", v))
+                .map(|v| quote! { #v: None });
+
             let res = quote! {
                 pub fn new( #( #fieldnames: #fieldtypes ),* ) -> Self {
                     Self {
                         #tgtype
-                        #( #fieldnames_i ),*
+                        #( #fieldnames_i, )*
+                        #( #nones ),*
                     }
                 }
             };
@@ -644,15 +717,15 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate a struct based on a type name from the api spec
-    fn generate_struct<T>(&self, name: &T) -> Result<TokenStream>
+    fn generate_struct<T>(&self, type_name: T, name: T) -> Result<TokenStream>
     where
         T: AsRef<str>,
     {
         let t = self
             .spec
-            .get_type(name)
+            .get_type(type_name)
             .ok_or_else(|| anyhow!("type not found"))?;
-        let typename = format_ident!("{}", t.name);
+        let typename = format_ident!("{}", name.as_ref());
 
         let fieldnames = field_iter(&t, |f| {
             let v = &f.name;
