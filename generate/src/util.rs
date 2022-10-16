@@ -271,16 +271,9 @@ impl<'a> ChooseType<'a> {
                 };
                 quote.extend(vec);
             }
-
-            if checked && !(is_media && name.as_ref() == "media") && !unbox {
-                quote.extend(quote! {
-                    Box<#res>
-                });
-            } else {
-                quote.extend(quote! {
-                    #res
-                });
-            }
+            quote.extend(quote! {
+                #res
+            });
             for _ in 0..nested {
                 let vec = quote! {
                     >
@@ -296,13 +289,7 @@ impl<'a> ChooseType<'a> {
                 res.to_token_stream()
             };
 
-            if checked && !(is_media && name.as_ref() == "media") && !unbox {
-                quote! {
-                    Box<#res>
-                }
-            } else {
-                quote!(#res)
-            }
+            quote!(#res)
         };
 
         let t = if !primative {
@@ -311,6 +298,14 @@ impl<'a> ChooseType<'a> {
                 quote! { & #lifetime #t }
             } else {
                 t
+            }
+        } else {
+            t
+        };
+
+        let t = if checked && !(is_media && name.as_ref() == "media") && !unbox {
+            quote! {
+                Box<#t>
             }
         } else {
             t
