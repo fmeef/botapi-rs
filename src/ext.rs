@@ -34,7 +34,7 @@ impl LongPoller {
                 let update = self.bot.get_updates(Some(self.offset), None, None, None).await?;
                 let mut max = 0;
                 for update in update {
-                    let id =  *update.get_update_id();
+                    let id = update.get_update_id();
                     if id > max {
                         max = id;
                     }

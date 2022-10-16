@@ -1,6 +1,7 @@
 use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE, UPDATE};
 use anyhow::{anyhow, Ok, Result};
 use convert_case::{Case, Casing};
+use itertools::{multizip, Itertools};
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::naming::*;
@@ -659,23 +660,42 @@ impl<'a> GenerateTypes<'a> {
         let form_generator = self.generate_inputmedia_getter(&t)?;
         let inputmedia_generator = self.generate_inputfile_getter(&t)?;
         let constructor = self.generate_constructor(name)?;
+        let primative = t.fields.as_ref().map_or_else(
+            || Vec::new(),
+            |f| f.iter().map(|f| is_primative(&f.types[0])).collect_vec(),
+        );
+
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
             quote! {
                 #( #impls )*
             }
         } else {
+            let methods = multizip((comments, fieldnames, fieldtypes, returnnames, primative)).map(
+                |(comments, fieldnames, fieldtypes, returnnames, primative)| {
+                    if primative {
+                        quote! {
+                                #comments
+                                pub fn #fieldnames(&self) -> #fieldtypes {
+                                    self.#returnnames
+                                }
+                        }
+                    } else {
+                        quote! {
+                                #comments
+                                pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
+                                    &self.#returnnames
+                                }
+                        }
+                    }
+                },
+            );
+
             quote! {
                 #[allow(dead_code)]
                 impl #typename {
                     #constructor
-                    #(
-                        #comments
-                        pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
-                            &self.#returnnames
-                        }
-                    )*
-
+                    #( #methods )*
                     #form_generator
                     #inputmedia_generator
                 }

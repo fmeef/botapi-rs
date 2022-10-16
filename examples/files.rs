@@ -11,7 +11,7 @@ async fn main() -> Result<()> {
         let update = bot.get_updates(Some(offset), None, None, None).await?;
         offset = update
             .iter()
-            .map(|u| *u.get_update_id())
+            .map(|u| u.get_update_id())
             .max()
             .unwrap_or_default()
             + 1;
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
                         .unwrap_or_default()
                 );
                 bot.send_document(
-                    *chat.get_id(),
+                    chat.get_id(),
                     filedata,
                     None,
                     Some(&"sad".to_owned()),
