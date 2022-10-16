@@ -1,8 +1,5 @@
 use crate::schema::{Field, Spec, Type};
-use crate::{
-    naming::{get_field_name, get_type_name_str},
-    ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX,
-};
+use crate::{naming::get_type_name_str, ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX};
 use anyhow::Result;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use std::sync::Arc;
@@ -43,18 +40,6 @@ where
     R: 'a,
 {
     t.fields.iter().flat_map(|v| v.iter()).map(func)
-}
-
-/// Helper method to walk map a function onto a type's fields
-pub(crate) fn field_iter_str<'a, F, R>(t: &'a Type, func: F) -> impl Iterator<Item = R> + 'a
-where
-    F: FnMut(String) -> R + 'a,
-    R: 'a,
-{
-    t.fields
-        .iter()
-        .flat_map(|v| v.iter().map(|f| get_field_name(f)))
-        .map(func)
 }
 
 pub(crate) fn get_multitype_name_types<T>(name: &T, types: &[String]) -> String

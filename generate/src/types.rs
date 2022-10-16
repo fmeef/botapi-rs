@@ -523,25 +523,13 @@ impl<'a> GenerateTypes<'a> {
             .get_type(traitname)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", traitname.as_ref());
-        let fieldnames = field_iter_str(&supertype, |v| format_ident!("get_{}", v));
-        let returnnames = field_iter_str(&supertype, |v| format_ident!("{}", v));
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
-        let fieldtypes = supertype.fields.iter().flat_map(|v| v.iter()).map(|v| {
-            self.choose_type
-                .choose_type(v.types.as_slice(), Some(&supertype), &v.name, !v.required)
-                .ok()
-        });
-        let comments = field_iter(&supertype, |v| v.description.into_comment());
+        let functions = self.generate_impl_functions(supertype, false);
 
         let res = quote! {
-             impl #trait_name for #typename {
-                    #(
-                        #comments
-                        fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
-                            &self.#returnnames
-                        }
-                    )*
-                }
+            impl #trait_name for #typename {
+                    #functions
+            }
         };
 
         Ok(res)
@@ -635,17 +623,7 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// Generate an impl with getters to allow type erasure
-    fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
-    where
-        T: AsRef<str> + 'a,
-    {
-        let t = self
-            .spec
-            .get_type(name)
-            .ok_or_else(|| anyhow!("type not found"))?;
-
-        let typename = format_ident!("{}", t.name);
+    fn generate_impl_functions(&self, t: &Type, public: bool) -> TokenStream {
         let methods = t.fields.as_ref().map_or_else(
             || Vec::new(),
             |f| {
@@ -688,17 +666,25 @@ impl<'a> GenerateTypes<'a> {
                             quote! { &'a #unbox }
                         };
 
+                        let public = if public {
+                            quote! {
+                                pub
+                            }
+                        } else {
+                            quote!()
+                        };
+
                         if f.required {
                             quote! {
                                 #comment
-                                pub fn #fieldname<'a>(&'a self) -> #ret  {
+                                #public fn #fieldname<'a>(&'a self) -> #ret  {
                                     #access
                                 }
                             }
                         } else {
                             quote! {
                                 #comment
-                                pub fn #fieldname<'a>(&'a self) -> #ret {
+                                #public fn #fieldname<'a>(&'a self) -> #ret {
                                     self.#returnname.as_ref().map(|v| {
                                         #vaccess
                                     })
@@ -710,6 +696,23 @@ impl<'a> GenerateTypes<'a> {
             },
         );
 
+        quote! {
+            #( #methods )*
+        }
+    }
+
+    /// Generate an impl with getters to allow type erasure
+    fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
+    where
+        T: AsRef<str> + 'a,
+    {
+        let t = self
+            .spec
+            .get_type(name)
+            .ok_or_else(|| anyhow!("type not found"))?;
+
+        let typename = format_ident!("{}", t.name);
+        let methods = self.generate_impl_functions(t, true);
         let form_generator = self.generate_inputmedia_getter(&t)?;
         let inputmedia_generator = self.generate_inputfile_getter(&t)?;
         let constructor = self.generate_constructor(name)?;
@@ -723,7 +726,7 @@ impl<'a> GenerateTypes<'a> {
                 #[allow(dead_code)]
                 impl #typename {
                     #constructor
-                    #( #methods )*
+                    #methods
                     #form_generator
                     #inputmedia_generator
                 }
@@ -736,15 +739,6 @@ impl<'a> GenerateTypes<'a> {
     /// Generate a trait impl for a specific type
     fn generate_trait(&self, t: &'a Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
-        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
-
-        let fieldtypes = t.fields.iter().flat_map(|v| v.iter()).map(|v| {
-            self.choose_type
-                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
-                .ok()
-        });
-
-        let comments = field_iter(&t, |v| v.description.into_comment());
         let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
             let subtypes = subtypes.iter().map(|v| format_ident!("Trait{}", v));
             quote! {
@@ -753,12 +747,50 @@ impl<'a> GenerateTypes<'a> {
         } else {
             quote!()
         };
+
+        let methods = t.fields.as_ref().map_or_else(
+            || Vec::new(),
+            |f| {
+                f.iter()
+                    .map(|f| {
+                        let comment = f.description.into_comment();
+                        let name = get_field_name(f);
+                        let fieldname = format_ident!("get_{}", name);
+                        let primative = is_primative(&f.types[0]);
+                        let unbox = self
+                            .choose_type
+                            .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                            .unwrap();
+
+                        let ret = if f.required && primative {
+                            quote! { #unbox }
+                        } else if !f.required && primative {
+                            quote! { Option<#unbox> }
+                        } else if !f.required {
+                            quote! { Option<&'a #unbox> }
+                        } else {
+                            quote! { &'a #unbox }
+                        };
+
+                        if f.required {
+                            quote! {
+                                #comment
+                                fn #fieldname<'a>(&'a self) -> #ret;
+                            }
+                        } else {
+                            quote! {
+                                #comment
+                                fn #fieldname<'a>(&'a self) -> #ret;
+                            }
+                        }
+                    })
+                    .collect_vec()
+            },
+        );
+
         let res = quote! {
             trait #typename #supertraits {
-                #(
-                    #comments
-                    fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes;
-                )*
+                #( #methods )*
             }
         };
         Ok(res)
