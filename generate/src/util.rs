@@ -180,6 +180,27 @@ impl<'a> ChooseType<'a> {
             name,
             optional,
             None::<Box<dyn FnOnce() -> TokenStream>>,
+            false,
+        )
+    }
+
+    pub(crate) fn choose_type_unbox<T>(
+        &self,
+        types: &[String],
+        parent: Option<&Type>,
+        name: &T,
+        optional: bool,
+    ) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        self.choose_type_private(
+            types,
+            parent,
+            name,
+            optional,
+            None::<Box<dyn FnOnce() -> TokenStream>>,
+            true,
         )
     }
 
@@ -195,7 +216,7 @@ impl<'a> ChooseType<'a> {
         T: AsRef<str>,
         F: FnOnce() -> TokenStream,
     {
-        self.choose_type_private(types, parent, name, optional, Some(lifetime))
+        self.choose_type_private(types, parent, name, optional, Some(lifetime), false)
     }
 
     /// Generate the type for a specific field, depending if we have an array type,
@@ -208,6 +229,7 @@ impl<'a> ChooseType<'a> {
         name: &T,
         optional: bool,
         lifetime: Option<F>,
+        unbox: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -250,7 +272,7 @@ impl<'a> ChooseType<'a> {
                 quote.extend(vec);
             }
 
-            if checked && !(is_media && name.as_ref() == "media") {
+            if checked && !(is_media && name.as_ref() == "media") && !unbox {
                 quote.extend(quote! {
                     Box<#res>
                 });
@@ -274,7 +296,7 @@ impl<'a> ChooseType<'a> {
                 res.to_token_stream()
             };
 
-            if checked && !(is_media && name.as_ref() == "media") {
+            if checked && !(is_media && name.as_ref() == "media") && !unbox {
                 quote! {
                     Box<#res>
                 }

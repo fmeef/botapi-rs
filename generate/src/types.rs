@@ -1,7 +1,7 @@
 use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE, UPDATE};
 use anyhow::{anyhow, Ok, Result};
 use convert_case::{Case, Casing};
-use itertools::{multizip, Itertools};
+use itertools::Itertools;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::naming::*;
@@ -646,51 +646,79 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
 
         let typename = format_ident!("{}", t.name);
-        let fieldnames = field_iter_str(&t, |v| format_ident!("get_{}", v));
-        let returnnames = field_iter_str(&t, |v| format_ident!("{}", v));
+        let methods = t.fields.as_ref().map_or_else(
+            || Vec::new(),
+            |f| {
+                f.iter()
+                    .map(|f| {
+                        let comment = f.description.into_comment();
+                        let name = get_field_name(f);
+                        let fieldname = format_ident!("get_{}", name);
+                        let returnname = format_ident!("{}", name);
+                        let primative = is_primative(&f.types[0]);
+                        let boxed = self.spec.check_parent(t, &f.types[0]);
+                        let unbox = self
+                            .choose_type
+                            .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                            .unwrap();
 
-        let fieldtypes = field_iter(&t, |v| {
-            let t = self.spec.get_type(name).unwrap();
-            self.choose_type
-                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
-                .ok()
-        });
-        let comments = field_iter(&t, |v| v.description.into_comment());
+                        let access = if primative {
+                            quote! { self.#returnname }
+                        } else if boxed {
+                            quote! { self.#returnname.as_ref() }
+                        } else {
+                            quote! { &self.#returnname }
+                        };
+
+                        let vaccess = if boxed {
+                            quote! { v.as_ref() }
+                        } else if primative {
+                            quote! { *v }
+                        } else {
+                            quote! { v }
+                        };
+
+                        let ret = if f.required && primative {
+                            quote! { #unbox }
+                        } else if !f.required && primative {
+                            quote! { Option<#unbox> }
+                        } else if !f.required {
+                            quote! { Option<&'a #unbox> }
+                        } else {
+                            quote! { &'a #unbox }
+                        };
+
+                        if f.required {
+                            quote! {
+                                #comment
+                                pub fn #fieldname<'a>(&'a self) -> #ret  {
+                                    #access
+                                }
+                            }
+                        } else {
+                            quote! {
+                                #comment
+                                pub fn #fieldname<'a>(&'a self) -> #ret {
+                                    self.#returnname.as_ref().map(|v| {
+                                        #vaccess
+                                    })
+                                }
+                            }
+                        }
+                    })
+                    .collect_vec()
+            },
+        );
 
         let form_generator = self.generate_inputmedia_getter(&t)?;
         let inputmedia_generator = self.generate_inputfile_getter(&t)?;
         let constructor = self.generate_constructor(name)?;
-        let primative = t.fields.as_ref().map_or_else(
-            || Vec::new(),
-            |f| f.iter().map(|f| is_primative(&f.types[0])).collect_vec(),
-        );
-
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
             quote! {
                 #( #impls )*
             }
         } else {
-            let methods = multizip((comments, fieldnames, fieldtypes, returnnames, primative)).map(
-                |(comments, fieldnames, fieldtypes, returnnames, primative)| {
-                    if primative {
-                        quote! {
-                                #comments
-                                pub fn #fieldnames(&self) -> #fieldtypes {
-                                    self.#returnnames
-                                }
-                        }
-                    } else {
-                        quote! {
-                                #comments
-                                pub fn #fieldnames<'a>(&'a self) -> &'a #fieldtypes {
-                                    &self.#returnnames
-                                }
-                        }
-                    }
-                },
-            );
-
             quote! {
                 #[allow(dead_code)]
                 impl #typename {
