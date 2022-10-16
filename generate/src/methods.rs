@@ -457,7 +457,8 @@ impl<'a> GenerateMethods<'a> {
                 #instantiate
                 let resp = #post;
                 if resp.ok {
-                    let resp = serde_json::from_value(resp.result.unwrap_or_default())?;
+                    let res = resp.result.unwrap_or_default();
+                    let resp = serde_path_to_error::deserialize(&res)?;
                     Ok(resp)
                 } else {
                     Err(anyhow::anyhow!(resp.description.unwrap_or_default()))

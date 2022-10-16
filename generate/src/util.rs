@@ -232,7 +232,6 @@ impl<'a> ChooseType<'a> {
             false
         };
 
-        let nested = is_array(&mytype);
         let t = if nested > 0 {
             let mytype = type_without_array(&mytype);
             let res = type_mapper(&mytype);
