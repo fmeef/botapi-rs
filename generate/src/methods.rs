@@ -145,7 +145,7 @@ impl<'a> GenerateMethods<'a> {
             .zip(types.iter())
             .map(|(fieldname, fieldtype)| {
                 quote! {
-                    pub fn #fieldname(&'a mut self, #fieldname: #fieldtype) -> &'a mut Self {
+                    pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
                         self.#fieldname = #fieldname;
                         self
                     }
