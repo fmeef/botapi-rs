@@ -640,7 +640,12 @@ impl<'a> GenerateTypes<'a> {
                             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
                             .unwrap();
 
-                        let access = if primative {
+                        let is_str =
+                            f.types[0] == "String" && !is_inputfile(f) && f.name != "media";
+
+                        let access = if is_str && f.required {
+                            quote! { self.#returnname.as_str() }
+                        } else if primative {
                             quote! { self.#returnname }
                         } else if boxed {
                             quote! { self.#returnname.as_ref() }
@@ -648,7 +653,9 @@ impl<'a> GenerateTypes<'a> {
                             quote! { &self.#returnname }
                         };
 
-                        let vaccess = if boxed {
+                        let vaccess = if is_str {
+                            quote! { v.as_str() }
+                        } else if boxed {
                             quote! { v.as_ref() }
                         } else if primative {
                             quote! { *v }
@@ -656,14 +663,18 @@ impl<'a> GenerateTypes<'a> {
                             quote! { v }
                         };
 
-                        let ret = if f.required && primative {
-                            quote! { #unbox }
-                        } else if !f.required && primative {
-                            quote! { Option<#unbox> }
-                        } else if !f.required {
-                            quote! { Option<&'a #unbox> }
+                        let ret = if is_str {
+                            quote! { &'a str }
+                        } else if (f.required && primative) || (!f.required && primative) {
+                            unbox
                         } else {
                             quote! { &'a #unbox }
+                        };
+
+                        let ret = if f.required {
+                            ret
+                        } else {
+                            quote! { Option<#ret> }
                         };
 
                         let public = if public {
@@ -762,14 +773,21 @@ impl<'a> GenerateTypes<'a> {
                             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
                             .unwrap();
 
-                        let ret = if f.required && primative {
-                            quote! { #unbox }
-                        } else if !f.required && primative {
-                            quote! { Option<#unbox> }
-                        } else if !f.required {
-                            quote! { Option<&'a #unbox> }
+                        let is_str =
+                            f.types[0] == "String" && !is_inputfile(f) && f.name != "media";
+
+                        let ret = if is_str {
+                            quote! { &'a str }
+                        } else if (f.required && primative) || (!f.required && primative) {
+                            unbox
                         } else {
                             quote! { &'a #unbox }
+                        };
+
+                        let ret = if f.required {
+                            ret
+                        } else {
+                            quote! { Option<#ret> }
                         };
 
                         if f.required {
