@@ -56,17 +56,15 @@ impl<'a> GenerateMethods<'a> {
                 if is_inputfile(&f) {
                     let q = quote! { FileData };
                     is_optional(f, q).to_token_stream()
+                } else if is_str_field(f) {
+                    is_optional(f, quote! { &'a str }).to_token_stream()
                 } else {
-                    if is_str_field(f) {
-                        is_optional(f, quote! { &'a str }).to_token_stream()
-                    } else {
-                        self.choose_type
-                            .get()
-                            .unwrap()
-                            .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
-                            .unwrap()
-                            .to_token_stream()
-                    }
+                    self.choose_type
+                        .get()
+                        .unwrap()
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
+                        .unwrap()
+                        .to_token_stream()
                 }
             });
 
@@ -92,6 +90,8 @@ impl<'a> GenerateMethods<'a> {
                 if is_inputfile(&f) {
                     let q = quote! { FileData };
                     is_optional(f, q).to_token_stream()
+                } else if is_str_field(f) {
+                    is_optional(f, quote! { &'a str }).to_token_stream()
                 } else {
                     self.choose_type
                         .get()
