@@ -8,7 +8,7 @@ homepage = "https://github.com/fmeef/botapi-rs"
 repository = "https://github.com/fmeef/botapi-rs.git"
 license = "MIT"
 
-include = [ "src/**/*", "Cargo.toml", "./examples/**/*"]
+include = [ "src/**/*", "Cargo.toml", "./examples/**/*", "generate/src/**/*", "generate/Cargo.toml"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -27,5 +27,5 @@ futures-util = "0.3.24"
 hyper = { version = "0.14.20", features = ["stream", "server", "runtime", "http2"] }
 
 [build-dependencies]
-generate = { path = "./generate", version="0.0.2" }
+generate = { path = "./generate", version = "0.0.2" }
 anyhow = "1.0.65"
