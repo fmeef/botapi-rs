@@ -640,8 +640,7 @@ impl<'a> GenerateTypes<'a> {
                             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
                             .unwrap();
 
-                        let is_str =
-                            f.types[0] == "String" && !is_inputfile(f) && f.name != "media";
+                        let is_str = is_str_field(f);
 
                         let access = if is_str && f.required {
                             quote! { self.#returnname.as_str() }
@@ -773,8 +772,7 @@ impl<'a> GenerateTypes<'a> {
                             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
                             .unwrap();
 
-                        let is_str =
-                            f.types[0] == "String" && !is_inputfile(f) && f.name != "media";
+                        let is_str = is_str_field(f);
 
                         let ret = if is_str {
                             quote! { &'a str }

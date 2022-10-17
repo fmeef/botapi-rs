@@ -22,6 +22,11 @@ where
     }
 }
 
+/// Check if a field should be represented as a &str=
+pub(crate) fn is_str_field(f: &Field) -> bool {
+    f.types[0] == "String" && !is_inputfile(f) && f.name != "media"
+}
+
 /// Check if a field is an "InputFile" for special treatment
 pub(crate) fn is_inputfile(field: &Field) -> bool {
     is_inputfile_types(field.types.as_slice())
