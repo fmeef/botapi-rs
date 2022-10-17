@@ -1,6 +1,5 @@
 use std::fs;
 
-use ::rustfmt::{config::Config, Input};
 use anyhow::Result;
 use generate::Generate;
 
@@ -14,11 +13,5 @@ fn main() -> Result<()> {
     fs::write("./src/gen_methods.rs", methods)?;
 
     fs::write("./src/gen_types.rs", types)?;
-
-    for t in ["./src/gen_types.rs", "./src/gen_methods.rs"] {
-        let input = Input::File(t.into());
-        let config = Config::default();
-        let _ = rustfmt::run(input, &config);
-    }
     Ok(())
 }

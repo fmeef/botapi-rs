@@ -1,15 +1,15 @@
 [package]
 name = "generate"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.58"
-quote = "1.0.0"
-serde = { version = "1.0.137", features = ["derive"] }
-serde_json = "1.0.81"
-convert_case = "0.5.0"
-once_cell = "1.14.0"
+anyhow = "1.0.65"
+quote = "1.0.21"
+serde = { version = "1.0.145", features = ["derive"] }
+serde_json = "1.0.86"
+convert_case = "0.6.0"
+once_cell = "1.15.0"
 itertools = "0.10.5"

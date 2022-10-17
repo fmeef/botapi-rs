@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 pub mod bot;
 pub mod ext;
 #[allow(unused_imports, rustdoc::bare_urls)]
