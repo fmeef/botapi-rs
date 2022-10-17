@@ -56,13 +56,13 @@ dependencies = [
  "enum_dispatch",
  "futures-core",
  "futures-util",
- "generate",
  "hyper",
  "reqwest",
  "serde",
  "serde_json",
  "serde_path_to_error",
  "serde_urlencoded",
+ "tggen",
  "tokio",
 ]
 
@@ -231,19 +231,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "generate"
-version = "0.0.2"
-dependencies = [
- "anyhow",
- "convert_case",
- "itertools",
- "once_cell",
- "quote",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -820,6 +807,19 @@ dependencies = [
  "redox_syscall",
  "remove_dir_all",
  "winapi",
+]
+
+[[package]]
+name = "tggen"
+version = "0.0.2"
+dependencies = [
+ "anyhow",
+ "convert_case",
+ "itertools",
+ "once_cell",
+ "quote",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

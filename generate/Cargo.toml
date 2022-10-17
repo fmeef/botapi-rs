@@ -1,5 +1,5 @@
 [package]
-name = "generate"
+name = "tggen"
 version = "0.0.2"
 edition = "2021"
 

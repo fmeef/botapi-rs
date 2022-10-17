@@ -1,7 +1,7 @@
 use std::fs;
 
 use anyhow::Result;
-use generate::Generate;
+use tggen::Generate;
 
 fn main() -> Result<()> {
     let json = fs::read_to_string("./telegram-bot-api-spec/api.json")?;

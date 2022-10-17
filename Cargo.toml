@@ -27,5 +27,5 @@ futures-util = "0.3.24"
 hyper = { version = "0.14.20", features = ["stream", "server", "runtime", "http2"] }
 
 [build-dependencies]
-generate = { path = "./generate", version = "0.0.2" }
+tggen = { path = "./generate", version = "0.0.2" }
 anyhow = "1.0.65"
