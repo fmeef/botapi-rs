@@ -98,7 +98,9 @@ impl<'a> ApxFeedbackArcSet<'a> {
     /// Construct a FeedbackArcSet solver from a spec reference
     pub(crate) fn new(spec: &'a Spec) -> Self {
         Self {
-            edges: edges_iter(spec).collect::<BTreeSet<(&Type, &Type)>>(),
+            edges: edges_iter(spec)
+                .map(|(t, e)| if t.name == "Update" { (e, e) } else { (t, e) })
+                .collect::<BTreeSet<(&Type, &Type)>>(),
             vertices: spec
                 .iter_types()
                 .collect::<BTreeSet<&Type>>()
