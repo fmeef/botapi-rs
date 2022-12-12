@@ -31,9 +31,10 @@ async fn main() -> Result<()> {
                 );
                 bot.send_document(
                     chat.get_id(),
+                    None,
                     filedata,
                     None,
-                    Some(&"sad".to_owned()),
+                    Some("sad"),
                     None,
                     None,
                     None,
