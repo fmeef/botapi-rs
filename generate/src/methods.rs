@@ -142,19 +142,41 @@ impl<'a> GenerateMethods<'a> {
         let name = get_type_name_str(&method.name);
         let name = format_ident!("Call{}", name);
         let call = self.generate_call(method).unwrap();
-        let (names, types) = self.method_params(method);
 
-        let fields = names
+        let names = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
             .iter()
-            .zip(types.iter())
-            .map(|(fieldname, fieldtype)| {
-                quote! {
-                    pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
-                        self.#fieldname = #fieldname;
-                        self
-                    }
+            .map(|f| get_field_name(f))
+            .map(|f| format_ident!("{}", f).to_token_stream());
+        let types = method.fields.as_deref().unwrap_or_default().iter();
+        let fields = names.zip(types).map(|(fieldname, f)| {
+            let fieldtype = if is_inputfile(&f) {
+                quote! { FileData }
+            } else if is_str_field(f) {
+                quote! { &'a str }
+            } else {
+                self.choose_type
+                    .get()
+                    .unwrap()
+                    .choose_type_ref(&f.types, None, &f.name, false, || quote! { 'a })
+                    .unwrap()
+                    .to_token_stream()
+            };
+
+            let some = if f.required {
+                quote! { #fieldname }
+            } else {
+                quote! { Some(#fieldname) }
+            };
+            quote! {
+                pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
+                    self.#fieldname = #some;
+                    self
                 }
-            });
+            }
+        });
 
         quote! {
             impl <'a> #name<'a> {
