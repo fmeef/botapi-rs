@@ -25,6 +25,8 @@ async-stream = "0.3.3"
 futures-core = { version = "0.3.25", features = [ "cfg-target-has-atomic" ] }
 futures-util = "0.3.25"
 hyper = { version = "0.14.23", features = ["stream", "server", "runtime", "http2"] }
+rand = "0.8.5"
+uuid = "1.2.2"
 
 [build-dependencies]
 tggen = { path = "./generate", version = "0.0.5" }

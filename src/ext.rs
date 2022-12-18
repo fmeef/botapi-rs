@@ -1,6 +1,9 @@
+use rand::rngs::OsRng;
+use rand::RngCore;
 use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
 use tokio::sync::mpsc;
+use uuid::Uuid;
 
 use crate::gen_types::UpdateExt;
 use crate::{bot::Bot, gen_types::Update};
@@ -61,15 +64,20 @@ pub struct Webhook {
     url: BotUrl,
     drop_pending_updates: bool,
     addr: SocketAddr,
+    cookie: Uuid,
 }
 
 impl Webhook {
     pub fn new(bot: &Bot, url: BotUrl, drop_pending_updates: bool, addr: SocketAddr) -> Self {
+        let mut bytes: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        OsRng.fill_bytes(&mut bytes);
+        let cookie = Uuid::from_slice(bytes.as_slice()).expect("invalid uuid");
         Self {
             bot: bot.clone(),
             url,
             drop_pending_updates,
             addr,
+            cookie,
         }
     }
 
@@ -84,7 +92,7 @@ impl Webhook {
                         None,
                         None,
                         Some(self.drop_pending_updates),
-                        None,
+                        Some(self.cookie.to_string().as_str()),
                     )
                     .await
             }
@@ -97,7 +105,7 @@ impl Webhook {
                         None,
                         None,
                         Some(self.drop_pending_updates),
-                        None,
+                        Some(self.cookie.to_string().as_str()),
                     )
                     .await
             }
@@ -116,16 +124,21 @@ impl Webhook {
         self,
     ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>>> {
         let (tx, mut rx) = mpsc::channel(128);
+        let cookie = self.cookie.clone();
         let svc = make_service_fn(move |_: &AddrStream| {
             let tx = tx.clone();
             async move {
                 Ok::<_, Error>(service_fn(move |body: Request<Body>| {
                     let tx = tx.clone();
                     async move {
-                        let json = to_bytes(body).await?;
+                        if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
+                            if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
+                                let json = to_bytes(body).await?;
 
-                        if let Ok(update) = serde_json::from_slice::<Update>(&json) {
-                            tx.send(update.into()).await?;
+                                if let Ok(update) = serde_json::from_slice::<Update>(&json) {
+                                    tx.send(update.into()).await?;
+                                }
+                            }
                         }
                         Ok::<_, Error>(Response::new(Body::from("")))
                     }
