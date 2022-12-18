@@ -164,13 +164,15 @@ impl<'a> GenerateMethods<'a> {
                     .unwrap()
                     .to_token_stream()
             };
-
+            let comment = f.description.into_comment();
             let some = if f.required {
                 quote! { #fieldname }
             } else {
                 quote! { Some(#fieldname) }
             };
+
             quote! {
+                #comment
                 pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
                     self.#fieldname = #some;
                     self
