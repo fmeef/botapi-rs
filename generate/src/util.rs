@@ -380,6 +380,7 @@ where
     fn into_comment(&self) -> TokenStream {
         let comment = self.as_ref();
         quote! {
+            #[allow(rustdoc::invalid_html_tags)]
             #[doc = #comment ]
         }
     }
