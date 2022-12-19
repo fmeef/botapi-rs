@@ -361,7 +361,9 @@ impl<'a> GenerateTypes<'a> {
                     .choose_type
                     .choose_type(&f.types, Some(t), &f.name, false)
                     .unwrap();
+                let comment = f.description.into_comment();
                 quote! {
+                    #comment
                     pub fn #name (mut self, #fieldname: #fieldtype) -> Self {
                         self. #fieldname = #fieldinst;
                         self
