@@ -351,13 +351,19 @@ impl<'a> GenerateTypes<'a> {
                 let name = format_ident!("set_{}", name);
                 let fieldname = get_field_name(f);
                 let fieldname = format_ident!("{}", fieldname);
+                let fieldinst = if f.required {
+                    quote! { #fieldname }
+                } else {
+                    quote! { Some(#fieldname) }
+                };
+
                 let fieldtype = self
                     .choose_type
-                    .choose_type(&f.types, Some(t), &f.name, !f.required)
+                    .choose_type(&f.types, Some(t), &f.name, false)
                     .unwrap();
                 quote! {
                     pub fn #name (mut self, #fieldname: #fieldtype) -> Self {
-                        self. #fieldname = #fieldname;
+                        self. #fieldname = #fieldinst;
                         self
                     }
                 }
