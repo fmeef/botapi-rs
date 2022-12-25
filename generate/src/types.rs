@@ -865,7 +865,7 @@ impl<'a> GenerateTypes<'a> {
                     #[test]
                     fn #test_name_msgpack() {
                         let t = #name::default();
-                        let ser = rmp_serde::to_vec(&t).unwrap();
+                        let ser = rmp_serde::to_vec_named(&t).unwrap();
                         let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
                     }
 
