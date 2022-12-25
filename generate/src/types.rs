@@ -873,8 +873,9 @@ impl<'a> GenerateTypes<'a> {
                     #[test]
                     fn #test_name_serde() {
                         let t = #name::default();
-                        let ser = rmp_serde::to_vec(&t).unwrap();
-                        let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
+                        let ser = serde_json::to_string(&t).unwrap();
+                        println!("{}", ser);
+                        let _: #name = serde_json::from_str(&ser).unwrap();
                     }
                 }
             });
@@ -910,7 +911,7 @@ impl<'a> GenerateTypes<'a> {
                 }
             } else {
                 quote! {
-                    #[serde(skip_serializing_if = "Option::is_none", rename = #v)]
+                    #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
                     #name
                 }
             }
