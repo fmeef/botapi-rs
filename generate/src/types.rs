@@ -103,6 +103,7 @@ impl<'a> GenerateTypes<'a> {
 
         let extra = self.generate_method_multitypes()?;
         let uses = self.generate_use()?;
+        let tests = self.generate_test();
         let res = quote! {
             #uses
             #( #traits )*
@@ -111,6 +112,7 @@ impl<'a> GenerateTypes<'a> {
             #enums
             #typeenums
             #extra
+            #tests
         };
         Ok(res)
     }
@@ -122,6 +124,8 @@ impl<'a> GenerateTypes<'a> {
             use std::fmt;
             use anyhow::{anyhow, Result};
             use reqwest::multipart::{Form, Part};
+            use std::default::Default;
+
         })
     }
 
@@ -465,12 +469,36 @@ impl<'a> GenerateTypes<'a> {
             .iter()
             .map(|v| get_type_name_str(v))
             .map(|v| format_ident!("{}", v));
+
+        let first_name = types
+            .iter()
+            .map(|v| get_type_name_str(v))
+            .map(|v| format_ident!("{}", v))
+            .next();
         let types_iter = types
             .iter()
             .map(|v| type_without_array(v))
             .map(|v| type_mapper(&v).to_owned())
             .map(|v| format_ident!("{}", v));
+        let first_type = types
+            .iter()
+            .map(|v| type_without_array(v))
+            .map(|v| type_mapper(&v).to_owned())
+            .map(|v| format_ident!("{}", v))
+            .next();
+
         let name = format_ident!("{}", name.as_ref());
+        let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+            quote! {
+                impl Default for #name {
+                      fn default() -> Self {
+                              #name::#first_name(#first_type::default())
+                      }
+                  }
+            }
+        } else {
+            quote!()
+        };
         let e = quote! {
             #[derive(Serialize, Deserialize, Debug)]
             #[serde(untagged)]
@@ -479,6 +507,7 @@ impl<'a> GenerateTypes<'a> {
                     #names_iter(#types_iter)
                 ),*
             }
+            #default
         };
         Ok(e)
     }
@@ -820,6 +849,45 @@ impl<'a> GenerateTypes<'a> {
         Ok(res)
     }
 
+    fn generate_test(&self) -> TokenStream {
+        let tests = self
+            .spec
+            .types
+            .values()
+            .filter(|t| t.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0)
+            .map(|t| {
+                let name = format_ident!("{}", get_type_name(&t));
+                let test_name_msgpack =
+                    format_ident!("rmp_serialize_{}", t.name.to_case(Case::Snake));
+                let test_name_serde =
+                    format_ident!("json_serialize_{}", t.name.to_case(Case::Snake));
+                quote! {
+                    #[test]
+                    fn #test_name_msgpack() {
+                        let t = #name::default();
+                        let ser = rmp_serde::to_vec(&t).unwrap();
+                        let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
+                    }
+
+
+                    #[test]
+                    fn #test_name_serde() {
+                        let t = #name::default();
+                        let ser = rmp_serde::to_vec(&t).unwrap();
+                        let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
+                    }
+                }
+            });
+
+        quote! {
+            #[allow(unused_imports)]
+            mod test {
+                use super::*;
+                use std::default::Default;
+                #( #tests )*
+            }
+        }
+    }
     /// Generate a struct based on a type name from the api spec
     fn generate_struct<T>(&self, type_name: T, name: T) -> Result<TokenStream>
     where
@@ -857,7 +925,7 @@ impl<'a> GenerateTypes<'a> {
         let struct_comment = t.description.concat().into_comment();
         let res = quote! {
             #struct_comment
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Default)]
             pub struct #typename {
                 #(
                     #comments

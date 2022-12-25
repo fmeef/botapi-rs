@@ -27,6 +27,7 @@ futures-util = "0.3.25"
 hyper = { version = "0.14.23", features = ["stream", "server", "runtime", "http2"] }
 rand = "0.8.5"
 uuid = "1.2.2"
+rmp-serde = "1.1.1"
 
 [build-dependencies]
 tggen = { path = "./generate", version = "0.0.8" }
