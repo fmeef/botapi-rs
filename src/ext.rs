@@ -5,6 +5,7 @@ use std::{net::IpAddr, pin::Pin};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
+use crate::bot::ApiError;
 use crate::gen_types::UpdateExt;
 use crate::{bot::Bot, gen_types::Update};
 use anyhow::Result;
@@ -81,7 +82,7 @@ impl Webhook {
         }
     }
 
-    async fn setup(&self) -> Result<bool> {
+    async fn setup(&self) -> Result<bool, ApiError> {
         match self.url {
             BotUrl::Address(ref addr, ip) => {
                 self.bot
@@ -112,7 +113,7 @@ impl Webhook {
         }
     }
 
-    async fn teardown(&self) -> Result<bool> {
+    async fn teardown(&self) -> Result<bool, ApiError> {
         self.bot
             .delete_webhook(Some(self.drop_pending_updates))
             .await
@@ -122,7 +123,7 @@ impl Webhook {
     /// startup and disabled on error.
     pub async fn get_updates(
         self,
-    ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>>> {
+    ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>>, ApiError> {
         let (tx, mut rx) = mpsc::channel(128);
         let cookie = self.cookie.clone();
         let svc = make_service_fn(move |_: &AddrStream| {
