@@ -32,12 +32,23 @@ enum ErrResponse {
     Err(anyhow::Error),
 }
 
+/// Error type containing either a Response type from telegram api or a generic error
 #[derive(Debug)]
 pub struct ApiError(ErrResponse);
 
 impl ApiError {
     pub(crate) fn from_response(resp: Response) -> Self {
         Self(ErrResponse::Response(resp))
+    }
+
+    /// Get the telegram api response if it exists, None if this error is a
+    /// non-telegram error
+    pub fn get_response<'a>(&'a self) -> Option<&'a Response> {
+        if let ErrResponse::Response(ref response) = self.0 {
+            Some(response)
+        } else {
+            None
+        }
     }
 }
 

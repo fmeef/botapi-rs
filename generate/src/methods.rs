@@ -130,7 +130,7 @@ impl<'a> GenerateMethods<'a> {
             },
         );
         let res = quote! {
-            pub async fn build(self) -> Result<#returntype, ApiError> {
+            pub async fn build(self) -> BotResult<#returntype> {
                 self.bot.#name( #( #r self.#typenames ),* ).await
             }
         };
@@ -482,7 +482,7 @@ impl<'a> GenerateMethods<'a> {
         let comment = method.description.concat().into_comment();
         let res = quote! {
             #comment
-            pub async fn #fn_name <'a> (&self, #( #typenames: #types ),*) -> Result<#returntype, ApiError> {
+            pub async fn #fn_name <'a> (&self, #( #typenames: #types ),*) -> BotResult<#returntype>{
                 #file_handler
                 #instantiate
                 let resp = #post;
@@ -546,7 +546,7 @@ impl<'a> GenerateMethods<'a> {
            use serde::{Deserialize, Serialize};
 
             use crate::{
-                bot::{Bot, Response, ApiError},
+                bot::{Bot, Response, ApiError, BotResult},
                 gen_types::*,
             };
         }
