@@ -53,12 +53,18 @@ impl<'a> GenerateTypes<'a> {
     fn preamble(&self) -> Result<TokenStream> {
         let structs = self.spec.types.values().map(|v| {
             if v.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0 {
-                let s = self.generate_struct(&v.name, &v.name).unwrap();
+                let s = self.generate_struct(&v.name, &v.name, true).unwrap();
+                let skip = self
+                    .generate_struct(&v.name, &format!("NoSkip{}", v.name), false)
+                    .unwrap();
+                let fromskip = self.generate_from_skip(v);
                 let b = self.generate_builder(&v).unwrap();
                 let update = self.generate_update_ext(v);
                 let from = self.generate_from_update_ext(v);
                 quote! {
                     #s
+                    #skip
+                    #fromskip
                     #update
                     #from
 
@@ -201,6 +207,56 @@ impl<'a> GenerateTypes<'a> {
             }
         } else {
             quote!()
+        }
+    }
+
+    fn generate_from_skip(&self, t: &Type) -> TokenStream {
+        let skipname = format_ident!("NoSkip{}", t.name);
+        let name = format_ident!("{}", t.name);
+        let fieldnames = t.fields.iter().flat_map(|v| v.iter()).map(|f| {
+            let fieldname = get_field_name(&f);
+            let fieldname = format_ident!("{}", fieldname);
+            quote! {
+                #fieldname: t.#fieldname
+            }
+        });
+
+        let into_fieldnames = t.fields.iter().flat_map(|v| v.iter()).map(|f| {
+            let fieldname = get_field_name(&f);
+            let fieldname = format_ident!("{}", fieldname);
+            quote! {
+                #fieldname: self.#fieldname
+            }
+        });
+
+        quote! {
+           impl From<#skipname> for #name {
+               fn from(t: #skipname) -> Self {
+                    Self {
+                        #( #fieldnames ),*
+                    }
+               }
+           }
+
+            impl Into<#skipname> for #name {
+                fn into(self) -> #skipname {
+                    #skipname {
+                        #( #into_fieldnames ),*
+                    }
+                }
+            }
+
+            impl #skipname {
+                pub fn skip(self) -> #name {
+                   self.into()
+                }
+            }
+
+            impl #name {
+                pub fn noskip(self) -> #skipname {
+                    self.into()
+                }
+            }
         }
     }
 
@@ -357,7 +413,7 @@ impl<'a> GenerateTypes<'a> {
             let typename_tokens = format_ident!("{}", typename);
             let buildername = format!("{}Builder", typename);
             let buildertokens = format_ident!("{}", buildername);
-            let st = self.generate_struct(&t.name, &buildername)?;
+            let st = self.generate_struct(&t.name, &buildername, true)?;
 
             let methods = fields.iter().map(|f| {
                 let name = f.name.to_case(Case::Snake);
@@ -977,8 +1033,11 @@ impl<'a> GenerateTypes<'a> {
             .filter(|t| t.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0)
             .map(|t| {
                 let name = format_ident!("{}", get_type_name(&t));
+
                 let test_name_msgpack =
-                    format_ident!("rmp_serialize_{}", t.name.to_case(Case::Snake));
+                    format_ident!("rmp_serialize_named_{}", t.name.to_case(Case::Snake));
+                let test_name_noskip =
+                    format_ident!("rmp_serialize_array_{}", t.name.to_case(Case::Snake));
                 let test_name_serde =
                     format_ident!("json_serialize_{}", t.name.to_case(Case::Snake));
                 quote! {
@@ -986,6 +1045,16 @@ impl<'a> GenerateTypes<'a> {
                     fn #test_name_msgpack() {
                         let t = #name::default();
                         let ser = rmp_serde::to_vec_named(&t).unwrap();
+                        let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
+                    }
+
+
+
+                    #[test]
+                    fn #test_name_noskip() {
+                        let t = #name::default();
+                        let t = t.noskip();
+                        let ser = rmp_serde::to_vec(&t).unwrap();
                         let _: #name = rmp_serde::from_slice(ser.as_slice()).unwrap();
                     }
 
@@ -1010,7 +1079,7 @@ impl<'a> GenerateTypes<'a> {
         }
     }
     /// Generate a struct based on a type name from the api spec
-    fn generate_struct<T>(&self, type_name: T, name: T) -> Result<TokenStream>
+    fn generate_struct<T>(&self, type_name: T, name: T, serde_skip: bool) -> Result<TokenStream>
     where
         T: AsRef<str>,
     {
@@ -1030,9 +1099,13 @@ impl<'a> GenerateTypes<'a> {
                     #name
                 }
             } else {
-                quote! {
-                    #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
-                    #name
+                if serde_skip {
+                    quote! {
+                        #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
+                        #name
+                    }
+                } else {
+                    quote! { #name }
                 }
             }
         });
@@ -1043,7 +1116,17 @@ impl<'a> GenerateTypes<'a> {
         });
 
         let comments = field_iter(&t, |v| v.description.into_comment());
-        let struct_comment = t.description.concat().into_comment();
+        let struct_comment = if serde_skip {
+            t.description.concat().into_comment()
+        } else {
+            format!(
+                "Companion type to {} that doesn't skip fields when serializing. 
+                Used for certain deserializers that use arrays to represent struct members",
+                t.name
+            )
+            .into_comment()
+        };
+
         let res = quote! {
             #struct_comment
             #[derive(Serialize, Deserialize, Debug, Default)]
