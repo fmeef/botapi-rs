@@ -7,6 +7,7 @@ use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Generator for the "types" source file
@@ -74,8 +75,17 @@ impl<'a> GenerateTypes<'a> {
                         .filter_map(|v| self.spec.get_type(v))
                         .map(|t| t.name.as_str())
                         .collect::<Vec<&str>>();
-                    self.generate_enum_str(subtypes.as_slice(), &v.name)
-                        .unwrap()
+                    let e = self
+                        .generate_enum_str(subtypes.as_slice(), &v.name)
+                        .unwrap();
+                    let name = format_ident!("{}", v.name);
+                    let methods = self.generate_enum_methods(v);
+                    quote! {
+                        #e
+                        impl #name {
+                            #methods
+                        }
+                    }
                 }
             }
         });
@@ -270,7 +280,6 @@ impl<'a> GenerateTypes<'a> {
             let res = if !is_inputfile_types(&types) {
                 if let Some(name) = self.get_multitype_name_return(&types) {
                     let t = self.generate_enum_str(&types, &name)?;
-
                     if !is_json_types(types) {
                         let typeiter = types.iter().map(|t| get_type_name_str(t));
                         let types = generate_fmt_display_enum(&name, typeiter);
@@ -492,13 +501,16 @@ impl<'a> GenerateTypes<'a> {
             quote! {
                 impl Default for #name {
                       fn default() -> Self {
-                              #name::#first_name(#first_type::default())
+                            #name::#first_name(#first_type::default())
                       }
                   }
             }
         } else {
             quote!()
         };
+
+        //let enum_methods = self.generate_enum_methods()
+
         let e = quote! {
             #[derive(Serialize, Deserialize, Debug)]
             #[serde(untagged)]
@@ -748,6 +760,114 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
+        let mut set = t
+            .fields
+            .iter()
+            .flat_map(|field| field.iter())
+            .collect::<HashSet<&Field>>();
+        println!("set len {}", set.len());
+        match t.subtypes {
+            None => set,
+            Some(ref subtypes) => {
+                for subtype in subtypes {
+                    if let Some(t) = self.spec.get_type(subtype) {
+                        println!(
+                            "subtype {}",
+                            t.subtypes.as_ref().map(|t| t.len()).unwrap_or(0)
+                        );
+                        let hashset = self.get_common_methods_recursive(t);
+                        set = set.intersection(&hashset).cloned().collect();
+                    }
+                }
+                set
+            }
+        }
+    }
+
+    pub(crate) fn get_common_methods(&'a self, t: &Type) -> HashSet<&'a Field> {
+        let mut res = HashSet::<&Field>::new();
+        if let Some(subtypes) = t.subtypes.as_ref() {
+            if let Some(first) = subtypes.first() {
+                let first = self.spec.get_type(first).unwrap();
+                res = first.fields.iter().flat_map(|field| field.iter()).collect();
+            }
+            for t in subtypes {
+                let t = self.spec.get_type(t).unwrap();
+                let hashset = self.get_common_methods_recursive(t);
+                res = res.intersection(&hashset).cloned().collect();
+            }
+        }
+        res
+    }
+
+    fn generate_enum_methods(&self, t: &Type) -> TokenStream {
+        if t.is_media() {
+            return quote!();
+        }
+        if let Some(subtypes) = t.subtypes.as_ref() {
+            let methods = self
+                .get_common_methods(t)
+                .iter()
+                .map(|f| {
+                    let comment = f.description.into_comment();
+                    let name = get_field_name(f);
+                    let fieldname = format_ident!("get_{}", name);
+                    let primative = is_primative(&f.types[0]);
+
+                    let unbox = self
+                        .choose_type
+                        .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                        .unwrap();
+
+                    let is_str = is_str_field(f);
+                    let ret = if is_str {
+                        quote! { &'a str }
+                    } else if (f.required && primative) || (!f.required && primative) {
+                        unbox
+                    } else {
+                        quote! { &'a #unbox }
+                    };
+
+                    let ret = if f.required {
+                        ret
+                    } else {
+                        quote! { Option<#ret> }
+                    };
+
+                    let match_arms = subtypes
+                        .iter()
+                        .map(|t| get_type_name_str(t))
+                        .map(|t| format_ident!("{}", t))
+                        .map(|t| {
+                            quote! {
+                                Self::#t(ref v) => v.#fieldname()
+                            }
+                        });
+
+                    let mat = quote! {
+                        match self {
+                            #( #match_arms ),*
+                        }
+                    };
+
+                    quote! {
+                        #comment
+                        pub fn #fieldname<'a>(&'a self) -> #ret  {
+                            #mat
+                        }
+                    }
+                })
+                .collect_vec();
+
+            quote! {
+                #( #methods )*
+            }
+        } else {
+            quote!()
+        }
+    }
+
     /// Generate an impl with getters to allow type erasure
     fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
     where
@@ -935,5 +1055,17 @@ impl<'a> GenerateTypes<'a> {
             }
         };
         Ok(res)
+    }
+}
+
+mod test {
+    #[test]
+    fn common_methods() {
+        let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();
+        let spec: Spec = serde_json::from_str(&json).unwrap();
+        let spec = Arc::new(spec);
+        let t = spec.get_type("ChatMember").unwrap().clone();
+        let types = GenerateTypes::new(Arc::clone(&spec), Arc::new(RwLock::new(HashMap::new())));
+        assert!(types.get_common_methods(&t).len() > 0);
     }
 }

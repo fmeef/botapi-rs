@@ -15,7 +15,7 @@ mod tests {
 
     #[test]
     fn run_to_completion() {
-        let json = std::fs::read_to_string("../../telegram-bot-api-spec/api.json").unwrap();
+        let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();
         let spec: Spec = serde_json::from_str(&json).unwrap();
         let mut f = ApxFeedbackArcSet::new(&spec);
         let size = f.run().unwrap().len();
@@ -281,13 +281,15 @@ impl Type {
     /// Returns true if a type should be treated as "InputMedia"
     /// used for working with files
     pub(crate) fn is_media(&self) -> bool {
-        self.subtype_of
-            .as_ref()
-            .map(|v| {
-                v.iter()
-                    .fold(false, |b, s| if s == "InputMedia" { true } else { b })
-            })
-            .unwrap_or(false)
+        self.name == "InputMedia"
+            || self
+                .subtype_of
+                .as_ref()
+                .map(|v| {
+                    v.iter()
+                        .fold(false, |b, s| if s == "InputMedia" { true } else { b })
+                })
+                .unwrap_or(false)
     }
 }
 
