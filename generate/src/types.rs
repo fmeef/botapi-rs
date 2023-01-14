@@ -141,7 +141,6 @@ impl<'a> GenerateTypes<'a> {
             use anyhow::{anyhow, Result};
             use reqwest::multipart::{Form, Part};
             use std::default::Default;
-
         })
     }
 
@@ -165,7 +164,7 @@ impl<'a> GenerateTypes<'a> {
                     }
                 });
             quote! {
-                #[derive(Debug)]
+                #[derive(Debug, Clone)]
                 pub enum UpdateExt {
                     #( #fieldnames ),*,
                     Invalid
@@ -568,7 +567,7 @@ impl<'a> GenerateTypes<'a> {
         //let enum_methods = self.generate_enum_methods()
 
         let e = quote! {
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Clone)]
             #[serde(untagged)]
             pub enum #name {
                 #(
@@ -586,7 +585,7 @@ impl<'a> GenerateTypes<'a> {
         let input_file = format_ident!("{}", INPUT_FILE);
         quote! {
 
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Clone)]
             pub struct FileBytes {
                 pub(crate) name: String,
                 #[serde(skip, default)]
@@ -598,7 +597,7 @@ impl<'a> GenerateTypes<'a> {
                 String(String)
             }
 
-            #[derive(Serialize, Deserialize, Debug)]
+            #[derive(Serialize, Deserialize, Debug, Clone)]
             pub enum #input_file {
                 Bytes(FileBytes),
                 String(String)
@@ -1129,7 +1128,7 @@ impl<'a> GenerateTypes<'a> {
 
         let res = quote! {
             #struct_comment
-            #[derive(Serialize, Deserialize, Debug, Default)]
+            #[derive(Serialize, Deserialize, Debug, Default, Clone)]
             pub struct #typename {
                 #(
                     #comments
