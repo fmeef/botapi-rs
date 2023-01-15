@@ -25,8 +25,7 @@ fn main() -> Result<()> {
             println!("rustfmt not installed, skipping");
         }
         Ok(mut handle) => {
-            let status = handle.wait().unwrap().success();
-            assert!(status);
+            handle.wait().unwrap();
         }
     }
 
@@ -38,8 +37,7 @@ fn main() -> Result<()> {
             println!("rustfmt not installed, skipping");
         }
         Ok(mut handle) => {
-            let status = handle.wait().unwrap().success();
-            assert!(status);
+            handle.wait().unwrap();
         }
     }
     Ok(())

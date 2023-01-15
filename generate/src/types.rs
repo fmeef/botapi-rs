@@ -821,7 +821,6 @@ impl<'a> GenerateTypes<'a> {
             .iter()
             .flat_map(|field| field.iter())
             .collect::<HashSet<&Field>>();
-        println!("set len {}", set.len());
         match t.subtypes {
             None => set,
             Some(ref subtypes) => {
