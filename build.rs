@@ -15,18 +15,30 @@ fn main() -> Result<()> {
 
     fs::write("./src/gen_types.rs", types)?;
 
-    if let Err(_) = Command::new("rustfmt")
+    match Command::new("rustfmt")
         .args(["--edition", "2021", "./src/gen_methods.rs"])
         .spawn()
     {
-        println!("rustfmt not installed, skipping");
+        Err(_) => {
+            println!("rustfmt not installed, skipping");
+        }
+        Ok(mut handle) => {
+            let status = handle.wait().unwrap().success();
+            assert!(status);
+        }
     }
 
-    if let Err(_) = Command::new("rustfmt")
+    match Command::new("rustfmt")
         .args(["--edition", "2021", "./src/gen_types.rs"])
         .spawn()
     {
-        println!("rustfmt not installed, skipping");
+        Err(_) => {
+            println!("rustfmt not installed, skipping");
+        }
+        Ok(mut handle) => {
+            let status = handle.wait().unwrap().success();
+            assert!(status);
+        }
     }
     Ok(())
 }
