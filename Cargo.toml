@@ -14,11 +14,11 @@ include = [ "src/**/*", "Cargo.toml", "./examples/**/*", "generate/src/**/*", "g
 
 [dependencies]
 anyhow = "1.0.68"
-enum_dispatch = "0.3.9"
+enum_dispatch = "0.3.11"
 reqwest = { version = "0.11.13", features = ["tokio-rustls", "json", "multipart", "stream"] }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.91"
-tokio = { version = "1.24.0", features = ["net", "socket2", "io-util", "tokio-macros", "macros", "rt-multi-thread"] }
+tokio = { version = "1.24.1", features = ["net", "socket2", "io-util", "tokio-macros", "macros", "rt-multi-thread"] }
 serde_path_to_error = "0.1.9"
 serde_urlencoded = "0.7.1"
 async-stream = "0.3.3"
