@@ -748,23 +748,23 @@ impl<'a> GenerateTypes<'a> {
                         let is_str = is_str_field(f);
 
                         let access = if is_str && f.required {
-                            quote! { Cow::from(Cow::Borrowed(self.#returnname.as_str())) }
+                            quote! { Cow::Borrowed(self.#returnname.as_str()) }
                         } else if primative {
                             quote! { self.#returnname }
                         } else if boxed {
-                            quote! { Cow::from(Cow::Borrowed(self.#returnname.as_ref())) }
+                            quote! { Cow::Borrowed(self.#returnname.as_ref()) }
                         } else {
-                            quote! { Cow::from(Cow::Borrowed(&self.#returnname)) }
+                            quote! { Cow::Borrowed(&self.#returnname) }
                         };
 
                         let vaccess = if is_str {
-                            quote! { Cow::from(Cow::Borrowed(v.as_str())) }
+                            quote! { Cow::Borrowed(v.as_str()) }
                         } else if boxed {
-                            quote! { Cow::from(Cow::Borrowed(v.as_ref())) }
+                            quote! { Cow::Borrowed(v.as_ref()) }
                         } else if primative {
                             quote! { *v }
                         } else {
-                            quote! { Cow::from(Cow::Borrowed(v)) }
+                            quote! { Cow::Borrowed(v) }
                         };
 
                         let ret = if is_str {
