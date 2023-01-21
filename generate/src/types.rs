@@ -737,14 +737,14 @@ impl<'a> GenerateTypes<'a> {
                         let comment = f.description.into_comment();
                         let name = get_field_name(f);
                         let fieldname = format_ident!("get_{}", name);
+                        let fieldname_ref = format_ident!("get_{}_ref", name);
                         let returnname = format_ident!("{}", name);
                         let primative = is_primative(&f.types[0]);
                         let boxed = self.spec.check_parent(t, &f.types[0]);
-                        let unbox = self
+                        let unbox = &self
                             .choose_type
                             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
                             .unwrap();
-
                         let is_str = is_str_field(f);
 
                         let access = if is_str && f.required {
@@ -767,18 +767,52 @@ impl<'a> GenerateTypes<'a> {
                             quote! { Cow::Borrowed(v) }
                         };
 
+                        let refaccess = if is_str && f.required {
+                            quote! { self.#returnname.as_str() }
+                        } else if primative {
+                            quote! { self.#returnname }
+                        } else if boxed {
+                            quote! { self.#returnname.as_ref() }
+                        } else {
+                            quote! { &self.#returnname }
+                        };
+
+                        let refvaccess = if is_str {
+                            quote! { v.as_str() }
+                        } else if boxed {
+                            quote! { v.as_ref() }
+                        } else if primative {
+                            quote! { *v }
+                        } else {
+                            quote! { v }
+                        };
+
                         let ret = if is_str {
                             quote! { Cow<'a, str> }
                         } else if (f.required && primative) || (!f.required && primative) {
-                            unbox
+                            unbox.to_owned()
                         } else {
                             quote! { Cow<'a, #unbox> }
+                        };
+
+                        let refret = if is_str {
+                            quote! { &'a str }
+                        } else if (f.required && primative) || (!f.required && primative) {
+                            unbox.to_owned()
+                        } else {
+                            quote! { &'a #unbox }
                         };
 
                         let ret = if f.required {
                             ret
                         } else {
                             quote! { Option<#ret> }
+                        };
+
+                        let refret = if f.required {
+                            refret
+                        } else {
+                            quote! { Option<#refret> }
                         };
 
                         let public = if public {
@@ -795,6 +829,12 @@ impl<'a> GenerateTypes<'a> {
                                 #public fn #fieldname<'a>(&'a self) -> #ret  {
                                     #access
                                 }
+
+
+                                #comment
+                                #public fn #fieldname_ref<'a>(&'a self) -> #refret  {
+                                    #refaccess
+                                }
                             }
                         } else {
                             quote! {
@@ -802,6 +842,14 @@ impl<'a> GenerateTypes<'a> {
                                 #public fn #fieldname<'a>(&'a self) -> #ret {
                                     self.#returnname.as_ref().map(|v| {
                                         #vaccess
+                                    })
+                                }
+
+
+                                #comment
+                                #public fn #fieldname_ref<'a>(&'a self) -> #refret {
+                                    self.#returnname.as_ref().map(|v| {
+                                        #refvaccess
                                     })
                                 }
                             }
@@ -978,6 +1026,7 @@ impl<'a> GenerateTypes<'a> {
                         let comment = f.description.into_comment();
                         let name = get_field_name(f);
                         let fieldname = format_ident!("get_{}", name);
+                        let fieldname_ref = format_ident!("get_{}_ref", name);
                         let primative = is_primative(&f.types[0]);
                         let unbox = self
                             .choose_type
@@ -989,9 +1038,17 @@ impl<'a> GenerateTypes<'a> {
                         let ret = if is_str {
                             quote! { Cow<'a, str> }
                         } else if (f.required && primative) || (!f.required && primative) {
-                            unbox
+                            unbox.clone()
                         } else {
                             quote! { Cow<'a, #unbox> }
+                        };
+
+                        let refret = if is_str {
+                            quote! { &'a str }
+                        } else if (f.required && primative) || (!f.required && primative) {
+                            unbox
+                        } else {
+                            quote! { &#unbox }
                         };
 
                         let ret = if f.required {
@@ -1000,15 +1057,27 @@ impl<'a> GenerateTypes<'a> {
                             quote! { Option<#ret> }
                         };
 
+                        let refret = if f.required {
+                            refret
+                        } else {
+                            quote! { Option<#refret> }
+                        };
+
                         if f.required {
                             quote! {
                                 #comment
                                 fn #fieldname<'a>(&'a self) -> #ret;
+
+                                #comment
+                                fn #fieldname_ref<'a>(&'a self) -> #refret;
                             }
                         } else {
                             quote! {
                                 #comment
                                 fn #fieldname<'a>(&'a self) -> #ret;
+
+                                #comment
+                                fn #fieldname_ref<'a>(&'a self) -> #refret;
                             }
                         }
                     })
