@@ -141,6 +141,7 @@ impl<'a> GenerateTypes<'a> {
             use anyhow::{anyhow, Result};
             use reqwest::multipart::{Form, Part};
             use std::default::Default;
+            use std::borrow::Cow;
         })
     }
 
@@ -747,31 +748,31 @@ impl<'a> GenerateTypes<'a> {
                         let is_str = is_str_field(f);
 
                         let access = if is_str && f.required {
-                            quote! { self.#returnname.as_str() }
+                            quote! { Cow::from(Cow::Borrowed(self.#returnname.as_str())) }
                         } else if primative {
                             quote! { self.#returnname }
                         } else if boxed {
-                            quote! { self.#returnname.as_ref() }
+                            quote! { Cow::from(Cow::Borrowed(self.#returnname.as_ref())) }
                         } else {
-                            quote! { &self.#returnname }
+                            quote! { Cow::from(Cow::Borrowed(&self.#returnname)) }
                         };
 
                         let vaccess = if is_str {
-                            quote! { v.as_str() }
+                            quote! { Cow::from(Cow::Borrowed(v.as_str())) }
                         } else if boxed {
-                            quote! { v.as_ref() }
+                            quote! { Cow::from(Cow::Borrowed(v.as_ref())) }
                         } else if primative {
                             quote! { *v }
                         } else {
-                            quote! { v }
+                            quote! { Cow::from(Cow::Borrowed(v)) }
                         };
 
                         let ret = if is_str {
-                            quote! { &'a str }
+                            quote! { Cow<'a, str> }
                         } else if (f.required && primative) || (!f.required && primative) {
                             unbox
                         } else {
-                            quote! { &'a #unbox }
+                            quote! { Cow<'a, #unbox> }
                         };
 
                         let ret = if f.required {
@@ -876,11 +877,11 @@ impl<'a> GenerateTypes<'a> {
 
                     let is_str = is_str_field(f);
                     let ret = if is_str {
-                        quote! { &'a str }
+                        quote! { Cow<'a, str> }
                     } else if (f.required && primative) || (!f.required && primative) {
                         unbox
                     } else {
-                        quote! { &'a #unbox }
+                        quote! { Cow<'a, #unbox> }
                     };
 
                     let ret = if f.required {
@@ -986,11 +987,11 @@ impl<'a> GenerateTypes<'a> {
                         let is_str = is_str_field(f);
 
                         let ret = if is_str {
-                            quote! { &'a str }
+                            quote! { Cow<'a, str> }
                         } else if (f.required && primative) || (!f.required && primative) {
                             unbox
                         } else {
-                            quote! { &'a #unbox }
+                            quote! { Cow<'a, #unbox> }
                         };
 
                         let ret = if f.required {
