@@ -3,13 +3,14 @@ use rand::RngCore;
 use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::SendError;
 use uuid::Uuid;
 
 use crate::bot::ApiError;
 use crate::gen_types::UpdateExt;
 use crate::{bot::Bot, gen_types::Update};
+use anyhow::anyhow;
 use anyhow::Result;
-use anyhow::{anyhow, Error};
 use async_stream::stream;
 use futures_core::Stream;
 use hyper::body::to_bytes;
@@ -32,7 +33,9 @@ impl LongPoller {
     }
 
     /// Return an async stream of updates, terminating with error
-    pub async fn get_updates(mut self) -> Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>> {
+    pub async fn get_updates(
+        mut self,
+    ) -> Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>> {
         let s = stream! {
             loop {
                 let update = self.bot.get_updates(Some(self.offset), None, None, None).await?;
@@ -123,25 +126,26 @@ impl Webhook {
     /// startup and disabled on error.
     pub async fn get_updates(
         self,
-    ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, Error>>>>, ApiError> {
+    ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>>, ApiError> {
         let (tx, mut rx) = mpsc::channel(128);
         let cookie = self.cookie.clone();
         let svc = make_service_fn(move |_: &AddrStream| {
             let tx = tx.clone();
             async move {
-                Ok::<_, Error>(service_fn(move |body: Request<Body>| {
+                Ok::<_, ApiError>(service_fn(move |body: Request<Body>| {
                     let tx = tx.clone();
                     async move {
                         if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
                             if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
-                                let json = to_bytes(body).await?;
-
+                                let json = to_bytes(body).await.map_err(|e| anyhow!(e))?;
                                 if let Ok(update) = serde_json::from_slice::<Update>(&json) {
-                                    tx.send(update.into()).await?;
+                                    tx.send(update.into())
+                                        .await
+                                        .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
                                 }
                             }
                         }
-                        Ok::<_, Error>(Response::new(Body::from("")))
+                        Ok::<_, ApiError>(Response::new(Body::from("")))
                     }
                 }))
             }
@@ -161,7 +165,7 @@ impl Webhook {
                 yield Ok(update);
             }
             if let Err(err) = fut.await {
-                yield Err(anyhow!(err));
+                yield Err(anyhow!(err).into());
             }
 
             self.teardown().await?;
