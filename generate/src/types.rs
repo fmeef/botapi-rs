@@ -145,30 +145,119 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
+    fn get_field_names_ext<'b>(&'b self, t: &'b Type) -> impl Iterator<Item = TokenStream> + 'b {
+        t.fields
+            .iter()
+            .flat_map(|v| v.iter())
+            .filter(|f| f.name != "update_id")
+            .map(move |f| {
+                let fieldname = get_type_name_str(&f.name);
+                let choose = self
+                    .choose_type
+                    .choose_type(f.types.as_slice(), Some(&t), &f.name, false)
+                    .unwrap();
+                let name = format_ident!("{}", fieldname);
+                quote! {
+                    #name(#choose)
+                }
+            })
+    }
+
+    fn has_method(&self, t: &Type, field: &Field) -> bool {
+        let common_methods = self.get_common_methods(t);
+        if let Some(fields) = t.fields.as_ref() {
+            fields.contains(field) || common_methods.contains(field)
+        } else {
+            common_methods.contains(field)
+        }
+    }
+
     /// Generate a special helper type to treat "Update" as an enum
     fn generate_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
-            let fieldnames = t
-                .fields
+            let fieldnames = self.get_field_names_ext(t);
+            let methods = self
+                .get_common_methods_recursive_ext(t)
                 .iter()
-                .flat_map(|v| v.iter())
-                .filter(|f| f.name != "update_id")
-                .map(|f| {
-                    let fieldname = get_type_name_str(&f.name);
-                    let choose = self
+                .filter_map(|field| {
+                    let comment = field.description.into_comment();
+                    let name = get_field_name(field);
+                    let fieldname = format_ident!("get_{}", name);
+                    let primative = is_primative(&field.types[0]);
+
+                    let unbox = self
                         .choose_type
-                        .choose_type(f.types.as_slice(), Some(&t), &f.name, false)
+                        .choose_type_unbox(field.types.as_slice(), Some(&t), &field.name, false)
                         .unwrap();
-                    let name = format_ident!("{}", fieldname);
-                    quote! {
-                        #name(#choose)
+
+                    let is_str = is_str_field(field);
+                    let ret = if is_str {
+                        quote! { Cow<'a, str> }
+                    } else if (field.required && primative) || (!field.required && primative) {
+                        unbox
+                    } else {
+                        quote! { Cow<'a, #unbox> }
+                    };
+
+                    let ret = if field.required {
+                        ret
+                    } else {
+                        quote! { Option<#ret> }
+                    };
+
+                    let ret = quote! { Option<#ret> };
+                    let match_arms = t
+                        .fields
+                        .iter()
+                        .flat_map(|v| v.iter())
+                        .filter(|f| f.name != "update_id")
+                        .filter(|f| {
+                            let fieldtype = f.types.first().unwrap();
+                            let fieldtype = self.spec.get_type(fieldtype).unwrap();
+                            self.has_method(fieldtype, field)
+                        })
+                        .map(|f| {
+                            let t = get_type_name_str(&f.name);
+                            let t = format_ident!("{}", t);
+                            quote! {
+                                Self::#t(ref v) => Some(v.#fieldname())
+                            }
+                        })
+                        .collect_vec();
+
+                    if match_arms.len() == 0 {
+                        None
+                    } else {
+                        let match_arms = match_arms.iter();
+
+                        let mat = quote! {
+                            match self {
+                                #( #match_arms , )*
+                                _ => None
+
+                            }
+                        };
+
+                        let res = quote! {
+                            #comment
+                            pub fn #fieldname<'a>(&'a self) -> #ret  {
+                                #mat
+                            }
+                        };
+                        Some(res)
                     }
-                });
+                })
+                .collect_vec();
+
             quote! {
                 #[derive(Debug, Clone)]
                 pub enum UpdateExt {
                     #( #fieldnames ),*,
                     Invalid
+                }
+
+                impl UpdateExt {
+                    #( #methods )*
                 }
             }
         } else {
@@ -862,6 +951,23 @@ impl<'a> GenerateTypes<'a> {
         quote! {
             #( #methods )*
         }
+    }
+
+    pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
+        let mut set = HashSet::<&Field>::new();
+
+        for field in t.fields.as_ref().unwrap_or(&vec![]) {
+            let mt = field.types.first().unwrap();
+            if is_json(field) && is_array(mt) == 0 {
+                let t = self
+                    .spec
+                    .get_type(mt)
+                    .expect(&format!("invalid type {}", mt));
+                let hashset = self.get_common_methods_recursive(&t);
+                set = set.union(&hashset).cloned().collect();
+            }
+        }
+        set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
     }
 
     pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {

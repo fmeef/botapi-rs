@@ -71,7 +71,7 @@ pub(crate) fn get_multitype_name(fieldname: &Field) -> String {
 }
 
 /// Check if a json spec type name is an "array" and return the offset of the actual type name
-pub(crate) fn is_array<T>(name: &T) -> usize
+pub(crate) fn is_array<T>(name: T) -> usize
 where
     T: AsRef<str>,
 {
