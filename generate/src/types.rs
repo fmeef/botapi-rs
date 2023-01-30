@@ -199,13 +199,8 @@ impl<'a> GenerateTypes<'a> {
                         quote! { Cow<'a, #unbox> }
                     };
 
-                    let ret = if field.required {
-                        ret
-                    } else {
-                        quote! { Option<#ret> }
-                    };
-
                     let ret = quote! { Option<#ret> };
+
                     let match_arms = t
                         .fields
                         .iter()
@@ -229,12 +224,21 @@ impl<'a> GenerateTypes<'a> {
                         None
                     } else {
                         let match_arms = match_arms.iter();
+                        let mat = if field.required {
+                            quote! {
+                                match self {
+                                    #( #match_arms , )*
+                                    _ => None
 
-                        let mat = quote! {
-                            match self {
-                                #( #match_arms , )*
-                                _ => None
+                                }
+                            }
+                        } else {
+                            quote! {
+                                match self {
+                                    #( #match_arms , )*
+                                    _ => None
 
+                                }.flatten()
                             }
                         };
 
