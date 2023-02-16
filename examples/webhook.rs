@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     let bot = Bot::new(token)?;
 
     let addr = ([0, 0, 0, 0], 8080).into();
-    let poller = Webhook::new(&bot, url, false, addr);
+    let poller = Webhook::new(&bot, url, false, addr, None);
     let mut res = poller.get_updates().await?;
 
     while let Some(Ok(update)) = res.next().await {

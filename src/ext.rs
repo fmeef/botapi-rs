@@ -22,13 +22,15 @@ use hyper::{Body, Request, Response, Server};
 pub struct LongPoller {
     bot: Bot,
     offset: i64,
+    allowed_updates: Option<Vec<String>>,
 }
 
 impl LongPoller {
-    pub fn new(bot: &Bot) -> Self {
+    pub fn new(bot: &Bot, allowed_updates: Option<Vec<String>>) -> Self {
         Self {
             bot: bot.clone(),
             offset: 0,
+            allowed_updates,
         }
     }
 
@@ -38,7 +40,7 @@ impl LongPoller {
     ) -> Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>> {
         let s = stream! {
             loop {
-                let update = self.bot.get_updates(Some(self.offset), None, None, None).await?;
+                let update = self.bot.get_updates(Some(self.offset), None, None, self.allowed_updates.as_ref()).await?;
                 let mut max = 0;
                 for update in update {
                     let id = update.get_update_id();
@@ -69,10 +71,17 @@ pub struct Webhook {
     drop_pending_updates: bool,
     addr: SocketAddr,
     cookie: Uuid,
+    allowed_updates: Option<Vec<String>>,
 }
 
 impl Webhook {
-    pub fn new(bot: &Bot, url: BotUrl, drop_pending_updates: bool, addr: SocketAddr) -> Self {
+    pub fn new(
+        bot: &Bot,
+        url: BotUrl,
+        drop_pending_updates: bool,
+        addr: SocketAddr,
+        allowed_updates: Option<Vec<String>>,
+    ) -> Self {
         let mut bytes: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         OsRng.fill_bytes(&mut bytes);
         let cookie = Uuid::from_slice(bytes.as_slice()).expect("invalid uuid");
@@ -82,6 +91,7 @@ impl Webhook {
             drop_pending_updates,
             addr,
             cookie,
+            allowed_updates,
         }
     }
 
@@ -94,7 +104,7 @@ impl Webhook {
                         None,
                         Some(&ip.to_string()),
                         None,
-                        None,
+                        self.allowed_updates.as_ref(),
                         Some(self.drop_pending_updates),
                         Some(self.cookie.to_string().as_str()),
                     )
@@ -107,7 +117,7 @@ impl Webhook {
                         None,
                         None,
                         None,
-                        None,
+                        self.allowed_updates.as_ref(),
                         Some(self.drop_pending_updates),
                         Some(self.cookie.to_string().as_str()),
                     )
