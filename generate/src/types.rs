@@ -697,6 +697,15 @@ impl<'a> GenerateTypes<'a> {
                 String(String)
             }
 
+            impl Default for #input_file {
+                fn default() -> Self {
+                    #input_file::Bytes(FileBytes {
+                        name: "default".to_owned(),
+                        bytes: None
+                    })
+                }
+            }
+
             impl FileData {
                 pub fn to_inputfile(self, name: String) -> #input_file {
                      match self {
