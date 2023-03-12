@@ -58,6 +58,7 @@ impl LongPoller {
     }
 }
 
+/// Endpoint for webhooks, could be either a raw ip address or a hostname
 pub enum BotUrl {
     Address(String, IpAddr),
     Host(String),
