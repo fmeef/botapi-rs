@@ -2,13 +2,19 @@ use crate::{schema::Type, MultiTypes, ARRAY_OF, INPUT_FILE, UPDATE};
 use anyhow::{anyhow, Ok, Result};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 
 use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
-use std::collections::HashSet;
+use regex::{escape, Regex};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+lazy_static! {
+    static ref REGEX_STATUS: Regex = Regex::new(r#""[a-z]+""#).unwrap();
+}
 
 /// Generator for the "types" source file
 pub(crate) struct GenerateTypes<'a> {
@@ -81,9 +87,36 @@ impl<'a> GenerateTypes<'a> {
                         .filter_map(|v| self.spec.get_type(v))
                         .map(|t| t.name.as_str())
                         .collect::<Vec<&str>>();
-                    let e = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name)
-                        .unwrap();
+                    let statuses = v
+                        .subtypes
+                        .iter()
+                        .flat_map(|v| v.iter())
+                        .flat_map(|st| {
+                            self.spec
+                                .get_type(st)
+                                .unwrap()
+                                .fields
+                                .iter()
+                                .flat_map(|v| v.iter())
+                                .filter(|field| field.name == "status")
+                                .map(|v| {
+                                    println!("field {}", v.description);
+                                    let d = escape(REGEX_STATUS.as_str());
+                                    REGEX_STATUS
+                                        .find(&v.description)
+                                        .map(|v| v.as_str())
+                                        .expect(&format!("regex {} failed", d))
+                                })
+                                .map(|v| (v, st.as_str()))
+                        })
+                        .collect::<HashMap<&str, &str>>();
+                    let e = if !statuses.is_empty() {
+                        self.generate_enum_adjacent_tagged(statuses, &v.name, "status")
+                            .unwrap()
+                    } else {
+                        self.generate_enum_str(subtypes.as_slice(), &v.name)
+                            .unwrap()
+                    };
                     let name = format_ident!("{}", v.name);
                     let methods = self.generate_enum_methods(v);
                     quote! {
@@ -615,6 +648,66 @@ impl<'a> GenerateTypes<'a> {
                 None
             }
         }
+    }
+
+    /// Generate an enum with custom types
+    fn generate_enum_adjacent_tagged(
+        &self,
+        types: HashMap<&str, &str>,
+        name: &str,
+        tag: &str,
+    ) -> Result<TokenStream> {
+        let names_iter = types
+            .values()
+            .map(|v| get_type_name_str(v))
+            .map(|v| format_ident!("{}", v));
+
+        let first_name = types
+            .values()
+            .map(|v| get_type_name_str(v))
+            .map(|v| format_ident!("{}", v))
+            .next();
+        let types_iter = types
+            .values()
+            .map(|v| type_without_array(v))
+            .map(|v| type_mapper(&v).to_owned())
+            .map(|v| format_ident!("{}", v));
+        let first_type = types
+            .values()
+            .map(|v| type_without_array(v))
+            .map(|v| type_mapper(&v).to_owned())
+            .map(|v| format_ident!("{}", v))
+            .next();
+
+        let name = format_ident!("{}", name);
+        let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+            quote! {
+                impl Default for #name {
+                      fn default() -> Self {
+                            #name::#first_name(#first_type::default())
+                      }
+                  }
+            }
+        } else {
+            quote!()
+        };
+
+        let tags = types.keys();
+
+        //let enum_methods = self.generate_enum_methods()
+
+        let e = quote! {
+            #[derive(Serialize, Deserialize, Debug, Clone)]
+            #[serde(tag = #tag)]
+            pub enum #name {
+                #(
+                    #[serde(rename = #tags)]
+                    #names_iter(#types_iter)
+                ),*
+            }
+            #default
+        };
+        Ok(e)
     }
 
     /// Generate an enum with custom types
