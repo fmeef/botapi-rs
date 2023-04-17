@@ -104,7 +104,7 @@ impl<'a> GenerateTypes<'a> {
                                     let d = escape(REGEX_STATUS.as_str());
                                     REGEX_STATUS
                                         .find(&v.description)
-                                        .map(|v| v.as_str())
+                                        .map(|v| &v.as_str()[1..v.as_str().len() - 1])
                                         .expect(&format!("regex {} failed", d))
                                 })
                                 .map(|v| (v, st.as_str()))
