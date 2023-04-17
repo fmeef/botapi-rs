@@ -111,7 +111,7 @@ impl<'a> GenerateTypes<'a> {
                         })
                         .collect::<HashMap<&str, &str>>();
                     let e = if !statuses.is_empty() {
-                        self.generate_enum_adjacent_tagged(statuses, &v.name, "status")
+                        self.generate_enum_internally_tagged(statuses, &v.name, "status")
                             .unwrap()
                     } else {
                         self.generate_enum_str(subtypes.as_slice(), &v.name)
@@ -182,7 +182,7 @@ impl<'a> GenerateTypes<'a> {
         t.fields
             .iter()
             .flat_map(|v| v.iter())
-            .filter(|f| f.name != "update_id")
+            .filter(|f| f.name != "update_id" && f.name != "status")
             .map(move |f| {
                 let fieldname = get_type_name_str(&f.name);
                 let choose = self
@@ -238,7 +238,7 @@ impl<'a> GenerateTypes<'a> {
                         .fields
                         .iter()
                         .flat_map(|v| v.iter())
-                        .filter(|f| f.name != "update_id")
+                        .filter(|f| f.name != "update_id" && f.name != "status")
                         .filter(|f| {
                             let fieldtype = f.types.first().unwrap();
                             let fieldtype = self.spec.get_type(fieldtype).unwrap();
@@ -309,7 +309,7 @@ impl<'a> GenerateTypes<'a> {
                 .fields
                 .iter()
                 .flat_map(|v| v.iter())
-                .filter(|f| f.name != "update_id")
+                .filter(|f| f.name != "update_id" && f.name != "status")
                 .map(|f| {
                     let fieldname = get_field_name(&f);
                     let extname = get_type_name_str(&f.name);
@@ -339,21 +339,31 @@ impl<'a> GenerateTypes<'a> {
     fn generate_from_skip(&self, t: &Type) -> TokenStream {
         let skipname = format_ident!("NoSkip{}", t.name);
         let name = format_ident!("{}", t.name);
-        let fieldnames = t.fields.iter().flat_map(|v| v.iter()).map(|f| {
-            let fieldname = get_field_name(&f);
-            let fieldname = format_ident!("{}", fieldname);
-            quote! {
-                #fieldname: t.#fieldname
-            }
-        });
+        let fieldnames = t
+            .fields
+            .iter()
+            .flat_map(|v| v.iter())
+            .filter(|f| f.name != "status")
+            .map(|f| {
+                let fieldname = get_field_name(&f);
+                let fieldname = format_ident!("{}", fieldname);
+                quote! {
+                    #fieldname: t.#fieldname
+                }
+            });
 
-        let into_fieldnames = t.fields.iter().flat_map(|v| v.iter()).map(|f| {
-            let fieldname = get_field_name(&f);
-            let fieldname = format_ident!("{}", fieldname);
-            quote! {
-                #fieldname: self.#fieldname
-            }
-        });
+        let into_fieldnames = t
+            .fields
+            .iter()
+            .flat_map(|v| v.iter())
+            .filter(|f| f.name != "status")
+            .map(|f| {
+                let fieldname = get_field_name(&f);
+                let fieldname = format_ident!("{}", fieldname);
+                quote! {
+                    #fieldname: self.#fieldname
+                }
+            });
 
         quote! {
            impl From<#skipname> for #name {
@@ -541,7 +551,7 @@ impl<'a> GenerateTypes<'a> {
             let buildertokens = format_ident!("{}", buildername);
             let st = self.generate_struct(&t.name, &buildername, true)?;
 
-            let methods = fields.iter().map(|f| {
+            let methods = fields.iter().filter(|f| f.name != "status").map(|f| {
                 let name = f.name.to_case(Case::Snake);
                 let name = format_ident!("set_{}", name);
                 let fieldname = get_field_name(f);
@@ -566,7 +576,7 @@ impl<'a> GenerateTypes<'a> {
                 }
             });
 
-            let instantiate = fields.iter().map(|f| {
+            let instantiate = fields.iter().filter(|f| f.name != "status").map(|f| {
                 let name = get_field_name(f);
                 let name = format_ident!("{}", name);
 
@@ -651,7 +661,7 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate an enum with custom types
-    fn generate_enum_adjacent_tagged(
+    fn generate_enum_internally_tagged(
         &self,
         types: HashMap<&str, &str>,
         name: &str,
@@ -849,7 +859,10 @@ impl<'a> GenerateTypes<'a> {
             let fieldtypes = t
                 .fields
                 .iter()
-                .flat_map(|v| v.iter().filter(|f| f.name != "type" && f.required))
+                .flat_map(|v| {
+                    v.iter()
+                        .filter(|f| f.name != "type" && f.required && f.name != "status")
+                })
                 .map(|v| {
                     self.choose_type
                         .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
@@ -860,7 +873,7 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .flat_map(|v| {
                     v.iter()
-                        .filter(|f| f.name != "type" && f.required)
+                        .filter(|f| f.name != "type" && f.required && f.name != "status")
                         .map(|f| get_field_name(f))
                 })
                 .map(|v| format_ident!("{}", v));
@@ -893,7 +906,7 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .flat_map(|v| {
                     v.iter()
-                        .filter(|f| f.name != "type" && f.required)
+                        .filter(|f| f.name != "type" && f.required && f.name != "status")
                         .map(|f| get_field_name(f))
                 })
                 .map(|v| format_ident!("{}", v));
@@ -903,7 +916,7 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .flat_map(|v| {
                     v.iter()
-                        .filter(|f| f.name != "type" && !f.required)
+                        .filter(|f| f.name != "type" && !f.required && f.name != "status")
                         .map(|f| get_field_name(f))
                 })
                 .map(|v| format_ident!("{}", v))
@@ -928,6 +941,7 @@ impl<'a> GenerateTypes<'a> {
             || Vec::new(),
             |f| {
                 f.iter()
+                    .filter(|f| f.name != "status")
                     .map(|f| {
                         let comment = f.description.into_comment();
                         let name = get_field_name(f);
@@ -1063,6 +1077,9 @@ impl<'a> GenerateTypes<'a> {
         let mut set = HashSet::<&Field>::new();
 
         for field in t.fields.as_ref().unwrap_or(&vec![]) {
+            if field.name == "status" {
+                continue;
+            }
             let mt = field.types.first().unwrap();
             if is_json(field) && is_array(mt) == 0 {
                 let t = self
@@ -1081,6 +1098,7 @@ impl<'a> GenerateTypes<'a> {
             .fields
             .iter()
             .flat_map(|field| field.iter())
+            .filter(|f| f.name != "status")
             .collect::<HashSet<&Field>>();
         match t.subtypes {
             None => set,
@@ -1105,7 +1123,12 @@ impl<'a> GenerateTypes<'a> {
         if let Some(subtypes) = t.subtypes.as_ref() {
             if let Some(first) = subtypes.first() {
                 let first = self.spec.get_type(first).unwrap();
-                res = first.fields.iter().flat_map(|field| field.iter()).collect();
+                res = first
+                    .fields
+                    .iter()
+                    .flat_map(|field| field.iter())
+                    .filter(|f| f.name != "status")
+                    .collect();
             }
             for t in subtypes {
                 let t = self.spec.get_type(t).unwrap();
@@ -1234,6 +1257,7 @@ impl<'a> GenerateTypes<'a> {
             || Vec::new(),
             |f| {
                 f.iter()
+                    .filter(|f| f.name != "status")
                     .map(|f| {
                         let comment = f.description.into_comment();
                         let name = get_field_name(f);
@@ -1389,11 +1413,16 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
         });
-        let fieldtypes = t.fields.iter().flat_map(|v| v.iter()).map(|v| {
-            self.choose_type
-                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
-                .ok()
-        });
+        let fieldtypes = t
+            .fields
+            .iter()
+            .flat_map(|v| v.iter())
+            .filter(|f| f.name != "status")
+            .map(|v| {
+                self.choose_type
+                    .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                    .ok()
+            });
 
         let comments = field_iter(&t, |v| v.description.into_comment());
         let struct_comment = if serde_skip {

@@ -44,7 +44,11 @@ where
     F: 'a,
     R: 'a,
 {
-    t.fields.iter().flat_map(|v| v.iter()).map(func)
+    t.fields
+        .iter()
+        .flat_map(|v| v.iter())
+        .filter(|f| f.name != "status")
+        .map(func)
 }
 
 pub(crate) fn get_multitype_name_types<T>(name: &T, types: &[String]) -> String
