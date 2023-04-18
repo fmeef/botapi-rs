@@ -278,6 +278,13 @@ pub(crate) struct Field {
 }
 
 impl Type {
+    pub(crate) fn pretty_fields(&self) -> impl Iterator<Item = &Field> {
+        self.fields
+            .iter()
+            .flat_map(|f| f.iter())
+            .filter(|f| f.name != "status")
+    }
+
     /// Returns true if a type should be treated as "InputMedia"
     /// used for working with files
     pub(crate) fn is_media(&self) -> bool {

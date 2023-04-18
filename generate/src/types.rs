@@ -179,10 +179,8 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn get_field_names_ext<'b>(&'b self, t: &'b Type) -> impl Iterator<Item = TokenStream> + 'b {
-        t.fields
-            .iter()
-            .flat_map(|v| v.iter())
-            .filter(|f| f.name != "update_id" && f.name != "status")
+        t.pretty_fields()
+            .filter(|f| f.name != "update_id")
             .map(move |f| {
                 let fieldname = get_type_name_str(&f.name);
                 let choose = self
@@ -235,10 +233,8 @@ impl<'a> GenerateTypes<'a> {
                     let ret = quote! { Option<#ret> };
 
                     let match_arms = t
-                        .fields
-                        .iter()
-                        .flat_map(|v| v.iter())
-                        .filter(|f| f.name != "update_id" && f.name != "status")
+                        .pretty_fields()
+                        .filter(|f| f.name != "update_id")
                         .filter(|f| {
                             let fieldtype = f.types.first().unwrap();
                             let fieldtype = self.spec.get_type(fieldtype).unwrap();
@@ -306,10 +302,8 @@ impl<'a> GenerateTypes<'a> {
     fn generate_from_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
             let fieldnames = t
-                .fields
-                .iter()
-                .flat_map(|v| v.iter())
-                .filter(|f| f.name != "update_id" && f.name != "status")
+                .pretty_fields()
+                .filter(|f| f.name != "update_id")
                 .map(|f| {
                     let fieldname = get_field_name(&f);
                     let extname = get_type_name_str(&f.name);
@@ -339,31 +333,21 @@ impl<'a> GenerateTypes<'a> {
     fn generate_from_skip(&self, t: &Type) -> TokenStream {
         let skipname = format_ident!("NoSkip{}", t.name);
         let name = format_ident!("{}", t.name);
-        let fieldnames = t
-            .fields
-            .iter()
-            .flat_map(|v| v.iter())
-            .filter(|f| f.name != "status")
-            .map(|f| {
-                let fieldname = get_field_name(&f);
-                let fieldname = format_ident!("{}", fieldname);
-                quote! {
-                    #fieldname: t.#fieldname
-                }
-            });
+        let fieldnames = t.pretty_fields().map(|f| {
+            let fieldname = get_field_name(&f);
+            let fieldname = format_ident!("{}", fieldname);
+            quote! {
+                #fieldname: t.#fieldname
+            }
+        });
 
-        let into_fieldnames = t
-            .fields
-            .iter()
-            .flat_map(|v| v.iter())
-            .filter(|f| f.name != "status")
-            .map(|f| {
-                let fieldname = get_field_name(&f);
-                let fieldname = format_ident!("{}", fieldname);
-                quote! {
-                    #fieldname: self.#fieldname
-                }
-            });
+        let into_fieldnames = t.pretty_fields().map(|f| {
+            let fieldname = get_field_name(&f);
+            let fieldname = format_ident!("{}", fieldname);
+            quote! {
+                #fieldname: self.#fieldname
+            }
+        });
 
         quote! {
            impl From<#skipname> for #name {
@@ -544,14 +528,15 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn generate_builder(&self, t: &Type) -> Result<TokenStream> {
-        let res = if let Some(fields) = t.fields.as_ref() {
+        let fields = t.pretty_fields().collect_vec();
+        let res = if fields.len() > 0 {
             let typename = get_type_name(t);
             let typename_tokens = format_ident!("{}", typename);
             let buildername = format!("{}Builder", typename);
             let buildertokens = format_ident!("{}", buildername);
             let st = self.generate_struct(&t.name, &buildername, true)?;
 
-            let methods = fields.iter().filter(|f| f.name != "status").map(|f| {
+            let methods = fields.iter().map(|f| {
                 let name = f.name.to_case(Case::Snake);
                 let name = format_ident!("set_{}", name);
                 let fieldname = get_field_name(f);
@@ -576,7 +561,7 @@ impl<'a> GenerateTypes<'a> {
                 }
             });
 
-            let instantiate = fields.iter().filter(|f| f.name != "status").map(|f| {
+            let instantiate = fields.iter().map(|f| {
                 let name = get_field_name(f);
                 let name = format_ident!("{}", name);
 
@@ -857,25 +842,17 @@ impl<'a> GenerateTypes<'a> {
             Ok(quote!())
         } else {
             let fieldtypes = t
-                .fields
-                .iter()
-                .flat_map(|v| {
-                    v.iter()
-                        .filter(|f| f.name != "type" && f.required && f.name != "status")
-                })
+                .pretty_fields()
+                .filter(|f| f.required && f.name != "type")
                 .map(|v| {
                     self.choose_type
                         .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
                         .ok()
                 });
             let fieldnames = t
-                .fields
-                .iter()
-                .flat_map(|v| {
-                    v.iter()
-                        .filter(|f| f.name != "type" && f.required && f.name != "status")
-                        .map(|f| get_field_name(f))
-                })
+                .pretty_fields()
+                .filter(|f| f.required && f.name != "type")
+                .map(|f| get_field_name(f))
                 .map(|v| format_ident!("{}", v));
             let tgtype = t.fields.as_ref().map_or_else(
                 || quote!(),
@@ -902,23 +879,15 @@ impl<'a> GenerateTypes<'a> {
                 },
             );
             let fieldnames_i = t
-                .fields
-                .iter()
-                .flat_map(|v| {
-                    v.iter()
-                        .filter(|f| f.name != "type" && f.required && f.name != "status")
-                        .map(|f| get_field_name(f))
-                })
+                .pretty_fields()
+                .filter(|f| f.required && f.name != "type")
+                .map(|f| get_field_name(f))
                 .map(|v| format_ident!("{}", v));
 
             let nones = t
-                .fields
-                .iter()
-                .flat_map(|v| {
-                    v.iter()
-                        .filter(|f| f.name != "type" && !f.required && f.name != "status")
-                        .map(|f| get_field_name(f))
-                })
+                .pretty_fields()
+                .filter(|f| !f.required && f.name != "type")
+                .map(|f| get_field_name(f))
                 .map(|v| format_ident!("{}", v))
                 .map(|v| quote! { #v: None });
 
@@ -937,136 +906,131 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn generate_impl_functions(&self, t: &Type, public: bool) -> TokenStream {
-        let methods = t.fields.as_ref().map_or_else(
-            || Vec::new(),
-            |f| {
-                f.iter()
-                    .filter(|f| f.name != "status")
-                    .map(|f| {
-                        let comment = f.description.into_comment();
-                        let name = get_field_name(f);
-                        let fieldname = format_ident!("get_{}", name);
-                        let fieldname_ref = format_ident!("get_{}_ref", name);
-                        let returnname = format_ident!("{}", name);
-                        let primative = is_primative(&f.types[0]);
-                        let boxed = self.spec.check_parent(t, &f.types[0]);
-                        let unbox = &self
-                            .choose_type
-                            .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
-                            .unwrap();
-                        let is_str = is_str_field(f);
+        let methods = t
+            .pretty_fields()
+            .map(|f| {
+                let comment = f.description.into_comment();
+                let name = get_field_name(f);
+                let fieldname = format_ident!("get_{}", name);
+                let fieldname_ref = format_ident!("get_{}_ref", name);
+                let returnname = format_ident!("{}", name);
+                let primative = is_primative(&f.types[0]);
+                let boxed = self.spec.check_parent(t, &f.types[0]);
+                let unbox = &self
+                    .choose_type
+                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                    .unwrap();
+                let is_str = is_str_field(f);
 
-                        let access = if is_str && f.required {
-                            quote! { Cow::Borrowed(self.#returnname.as_str()) }
-                        } else if primative {
-                            quote! { self.#returnname }
-                        } else if boxed {
-                            quote! { Cow::Borrowed(self.#returnname.as_ref()) }
-                        } else {
-                            quote! { Cow::Borrowed(&self.#returnname) }
-                        };
+                let access = if is_str && f.required {
+                    quote! { Cow::Borrowed(self.#returnname.as_str()) }
+                } else if primative {
+                    quote! { self.#returnname }
+                } else if boxed {
+                    quote! { Cow::Borrowed(self.#returnname.as_ref()) }
+                } else {
+                    quote! { Cow::Borrowed(&self.#returnname) }
+                };
 
-                        let vaccess = if is_str {
-                            quote! { Cow::Borrowed(v.as_str()) }
-                        } else if boxed {
-                            quote! { Cow::Borrowed(v.as_ref()) }
-                        } else if primative {
-                            quote! { *v }
-                        } else {
-                            quote! { Cow::Borrowed(v) }
-                        };
+                let vaccess = if is_str {
+                    quote! { Cow::Borrowed(v.as_str()) }
+                } else if boxed {
+                    quote! { Cow::Borrowed(v.as_ref()) }
+                } else if primative {
+                    quote! { *v }
+                } else {
+                    quote! { Cow::Borrowed(v) }
+                };
 
-                        let refaccess = if is_str && f.required {
-                            quote! { self.#returnname.as_str() }
-                        } else if primative {
-                            quote! { self.#returnname }
-                        } else if boxed {
-                            quote! { self.#returnname.as_ref() }
-                        } else {
-                            quote! { &self.#returnname }
-                        };
+                let refaccess = if is_str && f.required {
+                    quote! { self.#returnname.as_str() }
+                } else if primative {
+                    quote! { self.#returnname }
+                } else if boxed {
+                    quote! { self.#returnname.as_ref() }
+                } else {
+                    quote! { &self.#returnname }
+                };
 
-                        let refvaccess = if is_str {
-                            quote! { v.as_str() }
-                        } else if boxed {
-                            quote! { v.as_ref() }
-                        } else if primative {
-                            quote! { *v }
-                        } else {
-                            quote! { v }
-                        };
+                let refvaccess = if is_str {
+                    quote! { v.as_str() }
+                } else if boxed {
+                    quote! { v.as_ref() }
+                } else if primative {
+                    quote! { *v }
+                } else {
+                    quote! { v }
+                };
 
-                        let ret = if is_str {
-                            quote! { Cow<'a, str> }
-                        } else if (f.required && primative) || (!f.required && primative) {
-                            unbox.to_owned()
-                        } else {
-                            quote! { Cow<'a, #unbox> }
-                        };
+                let ret = if is_str {
+                    quote! { Cow<'a, str> }
+                } else if (f.required && primative) || (!f.required && primative) {
+                    unbox.to_owned()
+                } else {
+                    quote! { Cow<'a, #unbox> }
+                };
 
-                        let refret = if is_str {
-                            quote! { &'a str }
-                        } else if (f.required && primative) || (!f.required && primative) {
-                            unbox.to_owned()
-                        } else {
-                            quote! { &'a #unbox }
-                        };
+                let refret = if is_str {
+                    quote! { &'a str }
+                } else if (f.required && primative) || (!f.required && primative) {
+                    unbox.to_owned()
+                } else {
+                    quote! { &'a #unbox }
+                };
 
-                        let ret = if f.required {
-                            ret
-                        } else {
-                            quote! { Option<#ret> }
-                        };
+                let ret = if f.required {
+                    ret
+                } else {
+                    quote! { Option<#ret> }
+                };
 
-                        let refret = if f.required {
-                            refret
-                        } else {
-                            quote! { Option<#refret> }
-                        };
+                let refret = if f.required {
+                    refret
+                } else {
+                    quote! { Option<#refret> }
+                };
 
-                        let public = if public {
-                            quote! {
-                                pub
-                            }
-                        } else {
-                            quote!()
-                        };
+                let public = if public {
+                    quote! {
+                        pub
+                    }
+                } else {
+                    quote!()
+                };
 
-                        if f.required {
-                            quote! {
-                                #comment
-                                #public fn #fieldname<'a>(&'a self) -> #ret  {
-                                    #access
-                                }
-
-
-                                #comment
-                                #public fn #fieldname_ref<'a>(&'a self) -> #refret  {
-                                    #refaccess
-                                }
-                            }
-                        } else {
-                            quote! {
-                                #comment
-                                #public fn #fieldname<'a>(&'a self) -> #ret {
-                                    self.#returnname.as_ref().map(|v| {
-                                        #vaccess
-                                    })
-                                }
-
-
-                                #comment
-                                #public fn #fieldname_ref<'a>(&'a self) -> #refret {
-                                    self.#returnname.as_ref().map(|v| {
-                                        #refvaccess
-                                    })
-                                }
-                            }
+                if f.required {
+                    quote! {
+                        #comment
+                        #public fn #fieldname<'a>(&'a self) -> #ret  {
+                            #access
                         }
-                    })
-                    .collect_vec()
-            },
-        );
+
+
+                        #comment
+                        #public fn #fieldname_ref<'a>(&'a self) -> #refret  {
+                            #refaccess
+                        }
+                    }
+                } else {
+                    quote! {
+                        #comment
+                        #public fn #fieldname<'a>(&'a self) -> #ret {
+                            self.#returnname.as_ref().map(|v| {
+                                #vaccess
+                            })
+                        }
+
+
+                        #comment
+                        #public fn #fieldname_ref<'a>(&'a self) -> #refret {
+                            self.#returnname.as_ref().map(|v| {
+                                #refvaccess
+                            })
+                        }
+                    }
+                }
+            })
+            .collect_vec();
 
         quote! {
             #( #methods )*
@@ -1076,10 +1040,7 @@ impl<'a> GenerateTypes<'a> {
     pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
         let mut set = HashSet::<&Field>::new();
 
-        for field in t.fields.as_ref().unwrap_or(&vec![]) {
-            if field.name == "status" {
-                continue;
-            }
+        for field in t.pretty_fields() {
             let mt = field.types.first().unwrap();
             if is_json(field) && is_array(mt) == 0 {
                 let t = self
@@ -1094,12 +1055,7 @@ impl<'a> GenerateTypes<'a> {
     }
 
     pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-        let mut set = t
-            .fields
-            .iter()
-            .flat_map(|field| field.iter())
-            .filter(|f| f.name != "status")
-            .collect::<HashSet<&Field>>();
+        let mut set = t.pretty_fields().collect::<HashSet<&Field>>();
         match t.subtypes {
             None => set,
             Some(ref subtypes) => {
@@ -1123,12 +1079,7 @@ impl<'a> GenerateTypes<'a> {
         if let Some(subtypes) = t.subtypes.as_ref() {
             if let Some(first) = subtypes.first() {
                 let first = self.spec.get_type(first).unwrap();
-                res = first
-                    .fields
-                    .iter()
-                    .flat_map(|field| field.iter())
-                    .filter(|f| f.name != "status")
-                    .collect();
+                res = first.pretty_fields().collect();
             }
             for t in subtypes {
                 let t = self.spec.get_type(t).unwrap();
@@ -1253,73 +1204,68 @@ impl<'a> GenerateTypes<'a> {
             quote!()
         };
 
-        let methods = t.fields.as_ref().map_or_else(
-            || Vec::new(),
-            |f| {
-                f.iter()
-                    .filter(|f| f.name != "status")
-                    .map(|f| {
-                        let comment = f.description.into_comment();
-                        let name = get_field_name(f);
-                        let fieldname = format_ident!("get_{}", name);
-                        let fieldname_ref = format_ident!("get_{}_ref", name);
-                        let primative = is_primative(&f.types[0]);
-                        let unbox = self
-                            .choose_type
-                            .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
-                            .unwrap();
+        let methods = t
+            .pretty_fields()
+            .map(|f| {
+                let comment = f.description.into_comment();
+                let name = get_field_name(f);
+                let fieldname = format_ident!("get_{}", name);
+                let fieldname_ref = format_ident!("get_{}_ref", name);
+                let primative = is_primative(&f.types[0]);
+                let unbox = self
+                    .choose_type
+                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                    .unwrap();
 
-                        let is_str = is_str_field(f);
+                let is_str = is_str_field(f);
 
-                        let ret = if is_str {
-                            quote! { Cow<'a, str> }
-                        } else if (f.required && primative) || (!f.required && primative) {
-                            unbox.clone()
-                        } else {
-                            quote! { Cow<'a, #unbox> }
-                        };
+                let ret = if is_str {
+                    quote! { Cow<'a, str> }
+                } else if (f.required && primative) || (!f.required && primative) {
+                    unbox.clone()
+                } else {
+                    quote! { Cow<'a, #unbox> }
+                };
 
-                        let refret = if is_str {
-                            quote! { &'a str }
-                        } else if (f.required && primative) || (!f.required && primative) {
-                            unbox
-                        } else {
-                            quote! { &#unbox }
-                        };
+                let refret = if is_str {
+                    quote! { &'a str }
+                } else if (f.required && primative) || (!f.required && primative) {
+                    unbox
+                } else {
+                    quote! { &#unbox }
+                };
 
-                        let ret = if f.required {
-                            ret
-                        } else {
-                            quote! { Option<#ret> }
-                        };
+                let ret = if f.required {
+                    ret
+                } else {
+                    quote! { Option<#ret> }
+                };
 
-                        let refret = if f.required {
-                            refret
-                        } else {
-                            quote! { Option<#refret> }
-                        };
+                let refret = if f.required {
+                    refret
+                } else {
+                    quote! { Option<#refret> }
+                };
 
-                        if f.required {
-                            quote! {
-                                #comment
-                                fn #fieldname<'a>(&'a self) -> #ret;
+                if f.required {
+                    quote! {
+                        #comment
+                        fn #fieldname<'a>(&'a self) -> #ret;
 
-                                #comment
-                                fn #fieldname_ref<'a>(&'a self) -> #refret;
-                            }
-                        } else {
-                            quote! {
-                                #comment
-                                fn #fieldname<'a>(&'a self) -> #ret;
+                        #comment
+                        fn #fieldname_ref<'a>(&'a self) -> #refret;
+                    }
+                } else {
+                    quote! {
+                        #comment
+                        fn #fieldname<'a>(&'a self) -> #ret;
 
-                                #comment
-                                fn #fieldname_ref<'a>(&'a self) -> #refret;
-                            }
-                        }
-                    })
-                    .collect_vec()
-            },
-        );
+                        #comment
+                        fn #fieldname_ref<'a>(&'a self) -> #refret;
+                    }
+                }
+            })
+            .collect_vec();
 
         let res = quote! {
             trait #typename #supertraits {
@@ -1413,16 +1359,11 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
         });
-        let fieldtypes = t
-            .fields
-            .iter()
-            .flat_map(|v| v.iter())
-            .filter(|f| f.name != "status")
-            .map(|v| {
-                self.choose_type
-                    .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
-                    .ok()
-            });
+        let fieldtypes = t.pretty_fields().map(|v| {
+            self.choose_type
+                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                .ok()
+        });
 
         let comments = field_iter(&t, |v| v.description.into_comment());
         let struct_comment = if serde_skip {
