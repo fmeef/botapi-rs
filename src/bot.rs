@@ -6,6 +6,7 @@ use anyhow::Result;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 
+pub use reqwest::multipart::Part;
 static TELEGRAM_API: &str = "https://api.telegram.org";
 
 /// Hardcoded serde_json "Response" from telegram bot api. We can't genearate this so declare it

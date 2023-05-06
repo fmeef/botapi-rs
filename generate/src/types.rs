@@ -172,7 +172,8 @@ impl<'a> GenerateTypes<'a> {
             use serde::{Deserialize, Serialize};
             use std::fmt;
             use anyhow::{anyhow, Result};
-            use reqwest::multipart::{Form, Part};
+            use reqwest::multipart::Form;
+            use crate::bot::Part;
             use std::default::Default;
             use std::borrow::Cow;
         })
