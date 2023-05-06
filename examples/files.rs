@@ -1,5 +1,6 @@
 use anyhow::Result;
 use botapi::{bot::Bot, gen_types::FileData};
+use reqwest::multipart::Part;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -18,7 +19,7 @@ async fn main() -> Result<()> {
         for update in update {
             if let Some(message) = update.get_message() {
                 let chat = message.get_chat();
-                let filedata = FileData::Bytes("whfwejmkbfejbfe".as_bytes().to_owned());
+                let filedata = FileData::Part(Part::text("test").file_name("example"));
                 println!(
                     "chat_id {} offset {} message {}",
                     chat.get_id(),

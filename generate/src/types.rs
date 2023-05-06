@@ -298,6 +298,28 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    /// Method return types could contain multitypes not generated here normally
+    fn generate_method_multitypes(&self) -> Result<TokenStream> {
+        let res = self
+            .spec
+            .methods
+            .values()
+            .filter(|m| {
+                let key = m
+                    .returns
+                    .iter()
+                    .map(|t| get_type_name_str(t))
+                    .collect::<Vec<String>>()
+                    .join("");
+
+                !self.multitypes.read().unwrap().contains_key(&key)
+            })
+            .map(|m| &m.returns)
+            .map(|r| self.generate_multitype_enum_return(r).unwrap());
+
+        Ok(quote! { #( #res )* })
+    }
+
     /// Generate From<Update> impl for UpdateExt
     fn generate_from_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
@@ -387,13 +409,13 @@ impl<'a> GenerateTypes<'a> {
             let q = quote! {
                pub fn to_form(self, data: Form) -> Result<(Form, String)> {
                       match self {
-                       InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
-                           let attach = format!("attach://{}", name);
-                           let form = data.part(name, Part::bytes(bytes).file_name(""));
-                           Ok((form, attach))
-                       }
-                       InputFile::String(name) => Ok((data, name)),
-                       _ => Err(anyhow!("cry")),
+                        InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
+                            let attach = format!("attach://{}", name);
+                            let form = data.part(name, Part::bytes(bytes).file_name(""));
+                            Ok((form, attach))
+                        }
+                        InputFile::String(name) => Ok((data, name)),
+                        _ => Err(anyhow!("cry")),
                    }
                }
             };
@@ -403,41 +425,19 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    /// Method return types could contain multitypes not generated here normally
-    fn generate_method_multitypes(&self) -> Result<TokenStream> {
-        let res = self
-            .spec
-            .methods
-            .values()
-            .filter(|m| {
-                let key = m
-                    .returns
-                    .iter()
-                    .map(|t| get_type_name_str(t))
-                    .collect::<Vec<String>>()
-                    .join("");
-
-                !self.multitypes.read().unwrap().contains_key(&key)
-            })
-            .map(|m| &m.returns)
-            .map(|r| self.generate_multitype_enum_return(r).unwrap());
-
-        Ok(quote! { #( #res )* })
-    }
-
     /// If a type is a subtype of InputMedia generate multipart/form-data handler method as well
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
                fn to_form(self, data: Form) -> Result<(Form, String)> {
                    match self.media {
-                       Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
-                           let attach = format!("attach://{}", name);
-                           let form = data.part(name, Part::bytes(bytes));
-                           Ok((form, attach))
-                       }
-                       Some(InputFile::String(name)) => Ok((data, name)),
-                       _ => Err(anyhow!("cry")),
+                        Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
+                            let attach = format!("attach://{}", name);
+                            let form = data.part(name, Part::bytes(bytes));
+                            Ok((form, attach))
+                        }
+                        Some(InputFile::String(name)) => Ok((data, name)),
+                        _ => Err(anyhow!("cry")),
                    }
                }
             };
@@ -776,14 +776,15 @@ impl<'a> GenerateTypes<'a> {
 
             pub enum FileData {
                 Bytes(Vec<u8>),
-                String(String)
+                String(String),
+                Part(Part)
             }
 
-            #[derive(Serialize, Deserialize, Debug, Clone)]
+            #[derive(Clone, Serialize, Deserialize, Debug)]
             pub enum #input_file {
                 Bytes(FileBytes),
-                String(String)
-            }
+                String(String),
+              }
 
             impl Default for #input_file {
                 fn default() -> Self {
@@ -795,6 +796,8 @@ impl<'a> GenerateTypes<'a> {
             }
 
             impl FileData {
+
+                /*
                 pub fn to_inputfile(self, name: String) -> #input_file {
                      match self {
                         FileData::Bytes(bytes) => #input_file::Bytes(FileBytes {
@@ -804,6 +807,23 @@ impl<'a> GenerateTypes<'a> {
                         FileData::String(name) => #input_file::String(name),
                     }
                 }
+                */
+
+                pub fn to_form(self, data: Form, name: String) -> Result<(Form, String)> {
+                      match self {
+                        Self::Bytes(bytes) => {
+                            let attach = format!("attach://{}", name);
+                            let form = data.part(name, Part::bytes(bytes).file_name(""));
+                            Ok((form, attach))
+                        }
+                        Self::Part(part) => {
+                            let attach = format!("attach://{}", name);
+                            let form = data.part(name, part);
+                            Ok((form, attach))
+                        }
+                        Self::String(name) => Ok((data, name)),
+                   }
+               }
             }
         }
     }

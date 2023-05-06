@@ -414,14 +414,14 @@ impl<'a> GenerateMethods<'a> {
                 let json_name = format_ident!("{}_json", name);
                 if field.required {
                     quote! {
-                        let inputfile = #typename.to_inputfile(#name.to_owned());
-                        let (data, #json_name) = inputfile.to_form(data)?;
+                       // let inputfile = #typename.to_inputfile(#name.to_owned());
+                        let (data, #json_name) = #typename.to_form(data, #name.to_owned())?;
                     }
                 } else {
                     quote! {
                         let (data, #json_name) = if let Some(#typename) = #typename {
-                            let inputfile = #typename.to_inputfile(#name.to_owned());
-                            let (data, #json_name) = inputfile.to_form(data)?;
+                      //      let inputfile = #typename.to_inputfile(#name.to_owned());
+                            let (data, #json_name) = #typename.to_form(data, #name.to_owned())?;
                             (data, Some(#json_name))
                         } else {
                             (data, None)
