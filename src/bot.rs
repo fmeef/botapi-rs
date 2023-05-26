@@ -136,7 +136,14 @@ impl Bot {
         T: Serialize,
     {
         let endpoint = self.get_endpoint(endpoint);
-        let resp = self.0.client.post(endpoint).query(&body).send().await?;
+        let resp = self
+            .0
+            .client
+            .post(endpoint)
+            .query(&body)
+            .send()
+            .await
+            .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
         let mut deser = serde_json::Deserializer::from_slice(&bytes);
         let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
@@ -146,7 +153,13 @@ impl Bot {
     /// HTTP post helper with empty body
     pub async fn post_empty(&self, endpoint: &str) -> BotResult<Response> {
         let endpoint = self.get_endpoint(endpoint);
-        let resp = self.0.client.post(endpoint).send().await?;
+        let resp = self
+            .0
+            .client
+            .post(endpoint)
+            .send()
+            .await
+            .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
         let mut deser = serde_json::Deserializer::from_slice(&bytes);
         let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
@@ -166,7 +179,8 @@ impl Bot {
             .query(&body)
             .multipart(data)
             .send()
-            .await?;
+            .await
+            .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
         let mut deser = serde_json::Deserializer::from_slice(&bytes);
         let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
