@@ -149,9 +149,9 @@ impl<'a> GenerateMethods<'a> {
             .unwrap_or_default()
             .iter()
             .map(|f| get_field_name(f))
-            .map(|f| format_ident!("{}", f).to_token_stream());
+            .map(|f| (format_ident!("{}", f).to_token_stream(),  format_ident!("get_{}", f).to_token_stream()));
         let types = method.fields.as_deref().unwrap_or_default().iter();
-        let fields = names.zip(types).map(|(fieldname, f)| {
+        let fields = names.zip(types).map(|((fieldname, getter), f)| {
             let fieldtype = if is_inputfile(&f) {
                 quote! { FileData }
             } else if is_str_field(f) {
@@ -171,11 +171,22 @@ impl<'a> GenerateMethods<'a> {
                 quote! { Some(#fieldname) }
             };
 
+
+            let get_some = if f.required {
+                quote! { #fieldtype }
+            } else {
+                quote! { Option<#fieldtype> }
+            };
+             
             quote! {
                 #comment
                 pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
                     self.#fieldname = #some;
                     self
+                }
+
+                pub fn #getter(&'a self) -> &'a #get_some {
+                    &self.#fieldname
                 }
             }
         });
