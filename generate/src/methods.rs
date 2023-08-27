@@ -149,59 +149,47 @@ impl<'a> GenerateMethods<'a> {
             .unwrap_or_default()
             .iter()
             .map(|f| get_field_name(f))
-            .map(|f| {
-                (
-                    format_ident!("{}", f).to_token_stream(),
-                    format_ident!("get_{}", f).to_token_stream(),
-                    format_ident!("get_{}_mut", f).to_token_stream(),
-                )
-            });
+            .map(|f| (format_ident!("{}", f).to_token_stream(),  format_ident!("get_{}", f).to_token_stream()));
         let types = method.fields.as_deref().unwrap_or_default().iter();
-        let fields = names
-            .zip(types)
-            .map(|((fieldname, getter, getter_mut), f)| {
-                let fieldtype = if is_inputfile(&f) {
-                    quote! { FileData }
-                } else if is_str_field(f) {
-                    quote! { &'a str }
-                } else {
-                    self.choose_type
-                        .get()
-                        .unwrap()
-                        .choose_type_ref(&f.types, None, &f.name, false, || quote! { 'a })
-                        .unwrap()
-                        .to_token_stream()
-                };
-                let comment = f.description.into_comment();
-                let some = if f.required {
-                    quote! { #fieldname }
-                } else {
-                    quote! { Some(#fieldname) }
-                };
-
-                let get_some = if f.required {
-                    quote! { #fieldtype }
-                } else {
-                    quote! { Option<#fieldtype> }
-                };
-
-                quote! {
-                    #comment
-                    pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
-                        self.#fieldname = #some;
-                        self
-                    }
-
-                    pub fn #getter_mut(&'a mut self) -> &'a mut #get_some {
-                        &mut self.#fieldname
-                    }
+        let fields = names.zip(types).map(|((fieldname, getter), f)| {
+            let fieldtype = if is_inputfile(&f) {
+                quote! { FileData }
+            } else if is_str_field(f) {
+                quote! { &'a str }
+            } else {
+                self.choose_type
+                    .get()
+                    .unwrap()
+                    .choose_type_ref(&f.types, None, &f.name, false, || quote! { 'a })
+                    .unwrap()
+                    .to_token_stream()
+            };
+            let comment = f.description.into_comment();
+            let some = if f.required {
+                quote! { #fieldname }
+            } else {
+                quote! { Some(#fieldname) }
+            };
 
 
-                    pub fn #getter(&'a self) -> &'a #get_some {
-                        &self.#fieldname
-                    }
+            let get_some = if f.required {
+                quote! { #fieldtype }
+            } else {
+                quote! { Option<#fieldtype> }
+            };
+             
+            quote! {
+                #comment
+                pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
+                    self.#fieldname = #some;
+                    self
                 }
-            });
+
+                pub fn #getter(&'a mut self) -> &'a mut #get_some {
+                    &mut self.#fieldname
+                }
+            }
+        });
 
         quote! {
             impl <'a> #name<'a> {
