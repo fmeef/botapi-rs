@@ -185,8 +185,8 @@ impl<'a> GenerateMethods<'a> {
                     self
                 }
 
-                pub fn #getter(&'a self) -> &'a #get_some {
-                    &self.#fieldname
+                pub fn #getter(&'a mut self) -> &'a mut #get_some {
+                    &mut self.#fieldname
                 }
             }
         });
