@@ -175,6 +175,7 @@ impl<'a> ChooseType<'a> {
             optional,
             None::<Box<dyn FnOnce() -> TokenStream>>,
             false,
+            false,
         )
     }
 
@@ -184,6 +185,7 @@ impl<'a> ChooseType<'a> {
         parent: Option<&Type>,
         name: &T,
         optional: bool,
+        owned: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -195,6 +197,7 @@ impl<'a> ChooseType<'a> {
             optional,
             None::<Box<dyn FnOnce() -> TokenStream>>,
             true,
+            owned,
         )
     }
 
@@ -210,7 +213,7 @@ impl<'a> ChooseType<'a> {
         T: AsRef<str>,
         F: FnOnce() -> TokenStream,
     {
-        self.choose_type_private(types, parent, name, optional, Some(lifetime), false)
+        self.choose_type_private(types, parent, name, optional, Some(lifetime), false, false)
     }
 
     /// Generate the type for a specific field, depending if we have an array type,
@@ -224,6 +227,7 @@ impl<'a> ChooseType<'a> {
         optional: bool,
         lifetime: Option<F>,
         unbox: bool,
+        owned: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -231,7 +235,7 @@ impl<'a> ChooseType<'a> {
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
-        let primative = is_primative(&type_without_array(&types[0]));
+        let primative = is_primative(&type_without_array(&types[0])) && !owned;
         let opts = TypeChooserOpts {
             types,
             is_media,

@@ -219,7 +219,13 @@ impl<'a> GenerateTypes<'a> {
 
                     let unbox = self
                         .choose_type
-                        .choose_type_unbox(field.types.as_slice(), Some(&t), &field.name, false)
+                        .choose_type_unbox(
+                            field.types.as_slice(),
+                            Some(&t),
+                            &field.name,
+                            false,
+                            false,
+                        )
                         .unwrap();
 
                     let is_str = is_str_field(field);
@@ -934,14 +940,39 @@ impl<'a> GenerateTypes<'a> {
                 let name = get_field_name(f);
                 let fieldname = format_ident!("get_{}", name);
                 let fieldname_ref = format_ident!("get_{}_ref", name);
+                let fieldname_set = format_ident!("set_{}", name);
                 let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types[0]);
                 let boxed = self.spec.check_parent(t, &f.types[0]);
                 let unbox = &self
                     .choose_type
-                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
                     .unwrap();
                 let is_str = is_str_field(f);
+
+                let assign = if boxed {
+                    quote! {
+                        Box::new(#returnname)
+                    }
+                } else {
+                    quote! {
+                        #returnname
+                    }
+                };
+
+                let assign = if f.required {
+                    quote! {
+                        self.#returnname = #assign;
+                    }
+                } else {
+                    quote! {
+                        self.#returnname = if let Some(#returnname) = #returnname {
+                            Some(#assign)
+                        } else {
+                            None
+                        };
+                    }
+                };
 
                 let access = if is_str && f.required {
                     quote! { Cow::Borrowed(self.#returnname.as_str()) }
@@ -1019,6 +1050,12 @@ impl<'a> GenerateTypes<'a> {
                     quote!()
                 };
 
+                let setname = if f.required {
+                    quote!{ #unbox }
+                } else {
+                    quote! { Option<#unbox> }
+                };
+
                 if f.required {
                     quote! {
                         #comment
@@ -1026,10 +1063,15 @@ impl<'a> GenerateTypes<'a> {
                             #access
                         }
 
-
                         #comment
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret  {
                             #refaccess
+                        }
+
+                        #comment
+                        #public fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self  {
+                            #assign
+                            self
                         }
                     }
                 } else {
@@ -1041,20 +1083,108 @@ impl<'a> GenerateTypes<'a> {
                             })
                         }
 
-
                         #comment
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret {
                             self.#returnname.as_ref().map(|v| {
                                 #refvaccess
                             })
                         }
+
+                        #comment
+                        #public fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self  {
+                            #assign
+                            self
+                        }
                     }
                 }
             })
             .collect_vec();
 
+        let into_tuple = self.generate_into_tuple(t, false, public);
         quote! {
+
+            #into_tuple
+
             #( #methods )*
+        }
+    }
+
+    fn generate_into_tuple(&self, t: &Type, is_trait: bool, public: bool) -> TokenStream {
+        let tuple_create = t.pretty_fields().map(|f| {
+            let fieldname = get_field_name(f);
+            let fieldname = format_ident!("{}", fieldname);
+            let boxed = self.spec.check_parent(t, &f.types[0]);
+
+            let name = if boxed {
+                quote! { (* #fieldname) }
+            } else {
+                quote! { #fieldname }
+            };
+
+            let selfname = if boxed {
+                quote! { (*self. #fieldname) }
+            } else {
+                quote! { self. #fieldname }
+            };
+
+            if f.required {
+                quote! { #selfname }
+            } else {
+                quote! { self. #fieldname .map(|#fieldname| #name ) }
+            }
+        });
+
+        let tuple_create = match t.pretty_fields().count() {
+            0 => quote! { () },
+            1 => quote! { #( #tuple_create )* },
+            _ => quote! { ( #( #tuple_create ),* ) },
+        };
+
+        let tu = t.pretty_fields().map(|f| {
+            let unbox = &self
+                .choose_type
+                .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, true)
+                .unwrap();
+            if f.required {
+                quote! { #unbox }
+            } else {
+                quote! { Option<#unbox> }
+            }
+        });
+
+        let public = if public {
+            quote! {
+                pub
+            }
+        } else {
+            quote!()
+        };
+        let tu = match t.pretty_fields().count() {
+            0 => quote! {},
+            1 => quote! { -> #( #tu )* },
+            _ => quote! { -> ( #( #tu ),* ) },
+        };
+
+        let doctypes = t.pretty_fields().map(|f| f.name.as_str()).join(", ");
+        let comment = format!(
+            "Consumes and deconstructs this type into a tuple with one element per field.
+            Tuple type returned is: ({})",
+            doctypes
+        )
+        .into_comment();
+
+        if is_trait {
+            quote! {
+                 #comment
+                 fn into_tuple(self) #tu;
+            }
+        } else {
+            quote! {
+                #comment
+                #public fn into_tuple(self) #tu  {
+                    #tuple_create
+                }
+            }
         }
     }
 
@@ -1127,7 +1257,7 @@ impl<'a> GenerateTypes<'a> {
 
                     let unbox = self
                         .choose_type
-                        .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                        .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
                         .unwrap();
 
                     let is_str = is_str_field(f);
@@ -1231,11 +1361,14 @@ impl<'a> GenerateTypes<'a> {
                 let comment = f.description.into_comment();
                 let name = get_field_name(f);
                 let fieldname = format_ident!("get_{}", name);
+                let fieldname_set = format_ident!("set_{}", name);
                 let fieldname_ref = format_ident!("get_{}_ref", name);
+
+                let returnname = format_ident!("{}", name);                
                 let primative = is_primative(&f.types[0]);
                 let unbox = self
                     .choose_type
-                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false)
+                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
                     .unwrap();
 
                 let is_str = is_str_field(f);
@@ -1251,7 +1384,7 @@ impl<'a> GenerateTypes<'a> {
                 let refret = if is_str {
                     quote! { &'a str }
                 } else if (f.required && primative) || (!f.required && primative) {
-                    unbox
+                    unbox.clone()
                 } else {
                     quote! { &#unbox }
                 };
@@ -1268,6 +1401,12 @@ impl<'a> GenerateTypes<'a> {
                     quote! { Option<#refret> }
                 };
 
+                let setname = if f.required {
+                    quote!{ #unbox }
+                } else {
+                    quote! { Option<#unbox> }
+                };
+
                 if f.required {
                     quote! {
                         #comment
@@ -1275,6 +1414,9 @@ impl<'a> GenerateTypes<'a> {
 
                         #comment
                         fn #fieldname_ref<'a>(&'a self) -> #refret;
+
+                        #comment
+                        fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self;
                     }
                 } else {
                     quote! {
@@ -1283,13 +1425,18 @@ impl<'a> GenerateTypes<'a> {
 
                         #comment
                         fn #fieldname_ref<'a>(&'a self) -> #refret;
-                    }
+
+                        #comment
+                        fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self;                    }
                 }
             })
             .collect_vec();
 
+        let into_tuple = self.generate_into_tuple(t, true, true);
+
         let res = quote! {
             trait #typename #supertraits {
+                #into_tuple
                 #( #methods )*
             }
         };
