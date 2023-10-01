@@ -2,11 +2,14 @@ use std::fs;
 
 use anyhow::Result;
 use std::process::Command;
+use std::sync::Mutex;
 use tggen::Generate;
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=generate/");
     println!("cargo:rerun-if-changed=telegram-bot-api-spec/");
+    let mtx = Mutex::new(());
+    let guard = mtx.lock().unwrap();
     let json = fs::read_to_string("./telegram-bot-api-spec/api.json")?;
 
     let gen = Generate::new(json)?;
@@ -40,5 +43,6 @@ fn main() -> Result<()> {
             handle.wait().unwrap();
         }
     }
+    drop(guard);
     Ok(())
 }
