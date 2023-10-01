@@ -1134,13 +1134,15 @@ impl<'a> GenerateTypes<'a> {
             }
         });
 
-        let tuple_create = match t.pretty_fields().count() {
+        let pf = t.pretty_fields().collect_vec();
+
+        let tuple_create = match pf.len() {
             0 => quote! { () },
             1 => quote! { #( #tuple_create )* },
             _ => quote! { ( #( #tuple_create ),* ) },
         };
 
-        let tu = t.pretty_fields().map(|f| {
+        let tu = pf.iter().map(|f| {
             let unbox = &self
                 .choose_type
                 .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, true)
@@ -1159,13 +1161,13 @@ impl<'a> GenerateTypes<'a> {
         } else {
             quote!()
         };
-        let tu = match t.pretty_fields().count() {
+        let tu = match pf.len() {
             0 => quote! {},
             1 => quote! { -> #( #tu )* },
             _ => quote! { -> ( #( #tu ),* ) },
         };
 
-        let doctypes = t.pretty_fields().map(|f| f.name.as_str()).join(", ");
+        let doctypes = pf.iter().map(|f| f.name.as_str()).join(", ");
         let comment = format!(
             "Consumes and deconstructs this type into a tuple with one element per field.
             Tuple type returned is: ({})",
