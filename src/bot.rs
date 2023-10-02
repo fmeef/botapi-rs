@@ -73,12 +73,6 @@ impl From<serde_json::Error> for ApiError {
     }
 }
 
-impl From<serde_path_to_error::Error<serde_json::Error>> for ApiError {
-    fn from(value: serde_path_to_error::Error<serde_json::Error>) -> Self {
-        Self(ErrResponse::Err(anyhow::anyhow!(value)))
-    }
-}
-
 impl Error for ApiError {}
 
 impl std::fmt::Display for ApiError {
@@ -145,8 +139,7 @@ impl Bot {
             .await
             .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
-        let mut deser = serde_json::Deserializer::from_slice(&bytes);
-        let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
+        let resp: Response = serde_json::from_slice(&bytes)?;
         Ok(resp)
     }
 
@@ -161,8 +154,7 @@ impl Bot {
             .await
             .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
-        let mut deser = serde_json::Deserializer::from_slice(&bytes);
-        let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
+        let resp: Response = serde_json::from_slice(&bytes)?;
         Ok(resp)
     }
 
@@ -182,8 +174,7 @@ impl Bot {
             .await
             .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
-        let mut deser = serde_json::Deserializer::from_slice(&bytes);
-        let resp: Response = serde_path_to_error::deserialize(&mut deser)?;
+        let resp: Response = serde_json::from_slice(&bytes)?;
         Ok(resp)
     }
 }

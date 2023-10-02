@@ -503,7 +503,7 @@ impl<'a> GenerateMethods<'a> {
                 let resp = #post;
                 if resp.ok {
                     let res = resp.result.unwrap_or_default();
-                    let resp = serde_path_to_error::deserialize(&res)?;
+                    let resp = serde_json::from_value(res)?;
                     Ok(resp)
                 } else {
                     Err(ApiError::from_response(resp))
