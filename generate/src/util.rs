@@ -255,7 +255,11 @@ impl<'a> ChooseType<'a> {
         let t = if nested > 0 {
             let mytype = type_without_array(&mytype);
             let res = type_mapper(&mytype);
-            let res = format_ident!("{}", res);
+            let res = if res == "f64" {
+                quote! { ::ordered_float::OrderedFloat<f64> }
+            } else {
+                format_ident!("{}", res).into_token_stream()
+            };
 
             let res = if is_media && name.as_ref() == "media" {
                 quote! { Option<#res> }
@@ -280,7 +284,11 @@ impl<'a> ChooseType<'a> {
             }
             quote
         } else {
-            let res = format_ident!("{}", mytype);
+            let res = if mytype == "f64" {
+                quote! { ::ordered_float::OrderedFloat<f64> }
+            } else {
+                format_ident!("{}", mytype).into_token_stream()
+            };
             let res = if is_media && name.as_ref() == "media" {
                 quote! { Option<#res> }
             } else {

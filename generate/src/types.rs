@@ -39,7 +39,7 @@ impl<'a> GenerateTypes<'a> {
                     INPUT_FILE.to_owned()
                 } else {
                     if is_chatid(types) {
-                        "i64".to_owned()
+                        "f64".to_owned()
                     } else if types.len() > 1 {
                         get_multitype_name_types(&name, types)
                     } else if nested == 0 {
@@ -290,7 +290,7 @@ impl<'a> GenerateTypes<'a> {
                 .collect_vec();
 
             quote! {
-                #[derive(Debug, Clone)]
+                #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
                 pub enum UpdateExt {
                     #( #fieldnames ),*,
                     Invalid
@@ -699,7 +699,7 @@ impl<'a> GenerateTypes<'a> {
         //let enum_methods = self.generate_enum_methods()
 
         let e = quote! {
-            #[derive(Serialize, Deserialize, Debug, Clone)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             #[serde(tag = #tag)]
             pub enum #name {
                 #(
@@ -756,7 +756,7 @@ impl<'a> GenerateTypes<'a> {
         //let enum_methods = self.generate_enum_methods()
 
         let e = quote! {
-            #[derive(Serialize, Deserialize, Debug, Clone)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             #[serde(untagged)]
             pub enum #name {
                 #(
@@ -774,7 +774,7 @@ impl<'a> GenerateTypes<'a> {
         let input_file = format_ident!("{}", INPUT_FILE);
         quote! {
 
-            #[derive(Serialize, Deserialize, Debug, Clone)]
+            #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
             pub struct FileBytes {
                 pub(crate) name: String,
                 #[serde(skip, default)]
@@ -787,7 +787,7 @@ impl<'a> GenerateTypes<'a> {
                 Part(Part)
             }
 
-            #[derive(Clone, Serialize, Deserialize, Debug)]
+            #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub enum #input_file {
                 Bytes(FileBytes),
                 String(String),
@@ -1549,7 +1549,7 @@ impl<'a> GenerateTypes<'a> {
 
         let res = quote! {
             #struct_comment
-            #[derive(Serialize, Deserialize, Debug, Default, Clone)]
+            #[derive(Serialize, Deserialize, Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct #typename {
                 #(
                     #comments

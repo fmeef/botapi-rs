@@ -28,6 +28,7 @@ rand = "0.8.5"
 uuid = "1.4.1"
 rmp-serde = "1.1.2"
 tokio-test = "0.4.3"
+ordered-float = { version = "4.1.1", features = ["serde"] }
 
 [build-dependencies]
 tggen = { path = "./generate", version = "0.0.29" }
