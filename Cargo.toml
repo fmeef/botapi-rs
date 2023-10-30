@@ -16,16 +16,16 @@ include = [ "src/**/*", "Cargo.toml", "./examples/**/*", "generate/src/**/*", "g
 anyhow = "1.0.75"
 enum_dispatch = "0.3.12"
 reqwest = { version = "0.11.22", features = ["tokio-rustls", "json", "multipart", "stream"] }
-serde = { version = "1.0.189", features = ["derive"] }
+serde = { version = "1.0.190", features = ["derive"] }
 serde_json = "1.0.107"
 tokio = { version = "1.33.0", features = ["net", "socket2", "io-util", "tokio-macros", "macros", "rt-multi-thread"] }
 serde_urlencoded = "0.7.1"
 async-stream = "0.3.5"
-futures-core = { version = "0.3.28", features = [ "cfg-target-has-atomic" ] }
-futures-util = "0.3.28"
+futures-core = { version = "0.3.29", features = [ "cfg-target-has-atomic" ] }
+futures-util = "0.3.29"
 hyper = { version = "0.14.27", features = ["stream", "server", "runtime", "http2"] }
 rand = "0.8.5"
-uuid = "1.4.1"
+uuid = "1.5.0"
 rmp-serde = "1.1.2"
 tokio-test = "0.4.3"
 ordered-float = { version = "4.1.1", features = ["serde"] }
