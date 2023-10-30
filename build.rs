@@ -15,17 +15,18 @@ fn main() -> Result<()> {
     let gen = Generate::new(json)?;
     let types = gen.generate_types()?;
     let methods = gen.generate_methods()?;
+    let methods_path = std::env::var("OUT_DIR").unwrap() + "/gen_methods.rs";
+    let types_path = std::env::var("OUT_DIR").unwrap() + "/gen_types.rs";
+    fs::write(&types_path, types)?;
 
-    fs::write("./src/gen_types.rs", types)?;
-
-    fs::write("./src/gen_methods.rs", methods)?;
+    fs::write(&methods_path, methods)?;
 
     match Command::new("rustfmt")
-        .args(["--edition", "2021", "./src/gen_methods.rs"])
+        .args(["--edition", "2021", &methods_path])
         .spawn()
     {
         Err(_) => {
-            println!("rustfmt not installed, skipping");
+            //println!("rustfmt not installed, skipping");
         }
         Ok(mut handle) => {
             handle.wait().unwrap();
@@ -33,11 +34,11 @@ fn main() -> Result<()> {
     }
 
     match Command::new("rustfmt")
-        .args(["--edition", "2021", "./src/gen_types.rs"])
+        .args(["--edition", "2021", &types_path])
         .spawn()
     {
         Err(_) => {
-            println!("rustfmt not installed, skipping");
+            //println!("rustfmt not installed, skipping");
         }
         Ok(mut handle) => {
             handle.wait().unwrap();
