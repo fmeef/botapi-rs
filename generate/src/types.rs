@@ -140,16 +140,6 @@ impl<'a> GenerateTypes<'a> {
             .values()
             .filter_map(|v| self.generate_impl(&v.name).ok());
         let typeenums = self.generate_multitype_enums()?;
-        let enums = self.generate_enum_str(
-            self.spec
-                .types
-                .values()
-                .map(|v| v.name.as_str())
-                .collect::<Vec<&str>>()
-                .as_slice(),
-            &"GlobalTypes",
-        )?;
-
         let extra = self.generate_method_multitypes()?;
         let uses = self.generate_use()?;
         let tests = self.generate_test();
@@ -158,7 +148,6 @@ impl<'a> GenerateTypes<'a> {
             #( #traits )*
             #( #structs )*
             #( #impls )*
-            #enums
             #typeenums
             #extra
             #tests
