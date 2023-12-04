@@ -233,7 +233,6 @@ impl<'a> GenerateMethods<'a> {
                 let value = format_ident!("{}", name);
                 if field.required {
                     quote! {
-                          println!("{} => {}", #name, self.#value);
                         let form = form.text(#name, self.#value);
                     }
                 } else {
@@ -258,7 +257,6 @@ impl<'a> GenerateMethods<'a> {
                 let value = format_ident!("{}", name);
                 if field.required {
                     quote! {
-                        println!("{} => {}", #name, self.#value.to_string());
                         let form = form.text(#name, self.#value.to_string());
                     }
                 } else {
