@@ -1,2 +1,5 @@
 /target
 **/*.rs.bk
+out/*.rs
+src/gen_types.rs
+src/gen_methods.rs

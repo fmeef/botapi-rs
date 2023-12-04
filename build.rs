@@ -15,8 +15,10 @@ fn main() -> Result<()> {
     let gen = Generate::new(json)?;
     let types = gen.generate_types()?;
     let methods = gen.generate_methods()?;
-    let methods_path = std::env::var("OUT_DIR").unwrap() + "/gen_methods.rs";
-    let types_path = std::env::var("OUT_DIR").unwrap() + "/gen_types.rs";
+    let out_dir = "./src";
+    let methods_path = out_dir.to_owned() + "/gen_methods.rs";
+    let types_path = out_dir.to_owned() + "/gen_types.rs";
+    println!("cargo:rustc-env=BOT_GEN_DIR={}", out_dir);
     fs::write(&types_path, types)?;
 
     fs::write(&methods_path, methods)?;
