@@ -19,7 +19,7 @@ pub struct Response {
     pub description: Option<String>,
     pub parameters: Option<ResponseParameters>,
     #[serde(skip, default)]
-    pub floods: Vec<ResponseFlood>,
+    pub floods: Option<Vec<ResponseFlood>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -138,7 +138,7 @@ impl Default for Response {
             error_code: None,
             description: None,
             parameters: None,
-            floods: Vec::new(),
+            floods: None,
         }
     }
 }
@@ -197,7 +197,7 @@ impl Bot {
                 continue;
             } else {
                 if let Some(floods) = floods {
-                    resp.floods = floods;
+                    resp.floods = Some(floods);
                 }
                 return Ok(resp);
             }
@@ -228,7 +228,7 @@ impl Bot {
                 continue;
             } else {
                 if let Some(floods) = floods {
-                    resp.floods = floods;
+                    resp.floods = Some(floods);
                 }
                 return Ok(resp);
             }
@@ -255,7 +255,7 @@ impl Bot {
         let mut resp: Response = serde_json::from_slice(&bytes)?;
         if self.0.auto_wait {
             resp.wait().await;
-            resp.floods.push(resp.get_flood())
+            resp.floods = Some(vec![resp.get_flood()]);
         }
         Ok(resp)
     }
