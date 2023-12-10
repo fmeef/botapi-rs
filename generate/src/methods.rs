@@ -39,7 +39,11 @@ impl<'a> GenerateMethods<'a> {
         Ok(self.preamble()?.into_token_stream().to_string())
     }
 
-    fn method_params(&self, method: &Method) -> (Vec<TokenStream>, Vec<TokenStream>) {
+    fn method_params(
+        &self,
+        method: &Method,
+        generic: bool,
+    ) -> (Vec<TokenStream>, Vec<TokenStream>) {
         let typenames = method
             .fields
             .as_deref()
@@ -58,6 +62,8 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, q).to_token_stream()
                 } else if is_str_field(f) {
                     is_optional(f, quote! { &'a str }).to_token_stream()
+                } else if is_chatid(&f.types) && generic {
+                    is_optional(f, quote! { V }).to_token_stream()
                 } else {
                     self.choose_type
                         .get()
@@ -71,7 +77,11 @@ impl<'a> GenerateMethods<'a> {
         (typenames.collect(), types.collect())
     }
 
-    fn method_params_req(&self, method: &Method) -> (Vec<TokenStream>, Vec<TokenStream>) {
+    fn method_params_req(
+        &self,
+        method: &Method,
+        generic: bool,
+    ) -> (Vec<TokenStream>, Vec<TokenStream>) {
         let typenames = method
             .fields
             .as_deref()
@@ -92,6 +102,8 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, q).to_token_stream()
                 } else if is_str_field(f) {
                     is_optional(f, quote! { &'a str }).to_token_stream()
+                } else if is_chatid(&f.types) && generic {
+                    is_optional(f, quote! { V }).to_token_stream()
                 } else {
                     self.choose_type
                         .get()
@@ -106,7 +118,7 @@ impl<'a> GenerateMethods<'a> {
     }
 
     fn generate_call(&self, method: &Method) -> Result<TokenStream> {
-        let (typenames, _) = self.method_params(method);
+        let (typenames, _) = self.method_params(method, false);
         let returntype = self.choose_type.get().unwrap().choose_type(
             method.returns.as_slice(),
             None,
@@ -120,7 +132,11 @@ impl<'a> GenerateMethods<'a> {
             |f| {
                 f.iter()
                     .map(|f| {
-                        if !f.required || is_primative(&f.types) || is_inputfile(f) {
+                        if !f.required
+                            || is_primative(&f.types)
+                            || is_inputfile(f)
+                            || is_chatid(&f.types)
+                        {
                             quote!()
                         } else {
                             quote! { & }
@@ -170,6 +186,12 @@ impl<'a> GenerateMethods<'a> {
                     .to_token_stream()
             };
             let comment = f.description.into_comment();
+            let fieldtype = if is_chatid(&f.types) {
+                quote! {  V }
+            } else {
+                fieldtype
+            };
+
             let some = if f.required {
                 quote! { #fieldname }
             } else {
@@ -195,8 +217,26 @@ impl<'a> GenerateMethods<'a> {
             }
         });
 
+        let g = method
+            .fields
+            .as_ref()
+            .map(|f| f.iter().all(|f| !is_chatid(&f.types)))
+            .unwrap_or(true);
+
+        let generic = if g {
+            quote!()
+        } else {
+            quote! { , V: Into<ChatHandle> + Serialize }
+        };
+
+        let generic_struct = if g {
+            quote!()
+        } else {
+            quote! { , V }
+        };
+
         quote! {
-            impl <'a> #name<'a> {
+            impl <'a #generic> #name<'a #generic_struct> {
                 #( #fields )*
                 #call
             }
@@ -207,9 +247,21 @@ impl<'a> GenerateMethods<'a> {
         let name = get_type_name_str(&method.name);
         let name = format_ident!("Call{}", name);
         let i = self.generate_call_builder_impl(method);
-        let (names, types) = self.method_params(method);
+        let (names, types) = self.method_params(method, true);
+
+        let generic = if method
+            .fields
+            .as_ref()
+            .map(|f| f.iter().all(|f| !is_chatid(&f.types)))
+            .unwrap_or(true)
+        {
+            quote!()
+        } else {
+            quote! { , V }
+        };
+
         quote! {
-            pub struct #name <'a>{
+            pub struct #name <'a #generic>{
                 bot: &'a Bot,
                 #( #names: #types ),*
             }
@@ -251,7 +303,7 @@ impl<'a> GenerateMethods<'a> {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .filter(|f| !is_json(f))
+            .filter(|f| !is_json(f) && !is_chatid(&f.types))
             .map(|field| {
                 let name = get_field_name(field);
                 let value = format_ident!("{}", name);
@@ -270,25 +322,80 @@ impl<'a> GenerateMethods<'a> {
                 }
             });
 
-        let lifetime = if method.fields.as_ref().map_or(0, |f| f.len()) == 0
-            || method
-                .fields
-                .as_ref()
-                .map_or(false, |f| f.iter().all(|f| no_lifetime(f)))
-        {
-            quote!()
-        } else {
-            quote! {
-                <'a>
+        let chatid_value = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|f| is_chatid(&f.types))
+            .map(|field| {
+                let name = get_field_name(field);
+                let value = format_ident!("{}", name);
+                if field.required {
+                    quote! {
+                        let v: ChatHandle = self.#value.into();
+                        let form = form.text(#name, v.to_string());
+                    }
+                } else {
+                    quote! {
+                        let form = if let Some(#value) = self.#value {
+                            let v: ChatHandle = #value.into();
+                            form.text(#name, v.to_string())
+                        } else {
+                            form
+                        };
+                    }
+                }
+            });
+
+        let lifetime = !(method.fields.as_ref().map_or(0, |f| f.len()) == 0
+            || method.fields.as_ref().map_or(false, |f| {
+                f.iter().all(|f| no_lifetime(f) || is_chatid(&f.types))
+            }));
+
+        let g = method
+            .fields
+            .as_ref()
+            .map(|f| f.iter().all(|f| !is_chatid(&f.types)))
+            .unwrap_or(true);
+
+        let generic = if g {
+            if lifetime {
+                quote! { <'a> }
+            } else {
+                quote!()
             }
+        } else {
+            let lifetime = if lifetime {
+                quote! { 'a , }
+            } else {
+                quote!()
+            };
+            quote! { <#lifetime V: Into<ChatHandle> + Serialize> }
+        };
+
+        let generic_struct = if g {
+            if lifetime {
+                quote! { <'a> }
+            } else {
+                quote!()
+            }
+        } else {
+            let lifetime = if lifetime {
+                quote! { 'a , }
+            } else {
+                quote!()
+            };
+            quote! { <#lifetime V> }
         };
 
         quote! {
-            impl #lifetime #structname #lifetime {
+            impl #generic #structname #generic_struct {
                 #[allow(dead_code)]
                 fn get_form(self, form: Form) -> Form {
                     #( #json_value )*
                     #( #native_value )*
+                    #( #chatid_value )*
                     form
                 }
             }
@@ -321,6 +428,8 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, res)
                 } else if is_str_field(f) {
                     is_optional(f, quote! { &'a str })
+                } else if is_chatid(&f.types) {
+                    is_optional(f, quote! { V }).to_token_stream()
                 } else {
                     self.choose_type
                         .get()
@@ -330,17 +439,30 @@ impl<'a> GenerateMethods<'a> {
                 }
             });
 
-            let lifetime = if fields.iter().all(|f| no_lifetime(f)) {
-                quote!()
-            } else {
-                quote! {
-                    <'a>
+            let lifetime = !fields.iter().all(|f| no_lifetime(f) || is_chatid(&f.types));
+            let generic = if method
+                .fields
+                .as_ref()
+                .map(|f| f.iter().all(|f| !is_chatid(&f.types)))
+                .unwrap_or(true)
+            {
+                if lifetime {
+                    quote! { <'a> }
+                } else {
+                    quote!()
                 }
+            } else {
+                let lifetime = if lifetime {
+                    quote! { 'a , }
+                } else {
+                    quote!()
+                };
+                quote! { <#lifetime V: Into<ChatHandle> + Serialize> }
             };
 
             quote! {
                 #[derive(Serialize, Debug)]
-                struct #structname #lifetime {
+                struct #structname #generic {
                     #(
                         #typenames : #types
                     ),*
@@ -487,15 +609,26 @@ impl<'a> GenerateMethods<'a> {
             false,
         )?;
 
-        let (typenames, types) = self.method_params(method);
+        let (typenames, types) = self.method_params(method, true);
 
         let instantiate = self.instantiate_urlencoding_struct(method)?;
         let file_handler = self.generate_file_handler(method);
         let post = self.generate_post(method);
         let comment = method.description.concat().into_comment();
+        let generic = if method
+            .fields
+            .as_ref()
+            .map(|f| f.iter().all(|f| !is_chatid(&f.types)))
+            .unwrap_or(true)
+        {
+            quote!()
+        } else {
+            quote! { , V: Into<ChatHandle> + Serialize }
+        };
+
         let res = quote! {
             #comment
-            pub async fn #fn_name <'a> (&self, #( #typenames: #types ),*) -> BotResult<#returntype>{
+            pub async fn #fn_name <'a #generic> (&self, #( #typenames: #types ),*) -> BotResult<#returntype>{
                 #file_handler
                 #instantiate
                 let resp = #post;
@@ -518,7 +651,7 @@ impl<'a> GenerateMethods<'a> {
         let returntype = get_type_name_str(&method.name);
         let returntype = format_ident!("Call{}", returntype);
 
-        let (typenames, types) = self.method_params_req(method);
+        let (typenames, types) = self.method_params_req(method, true);
 
         let nones = method.fields.as_ref().map_or_else(
             || Vec::new(),
@@ -537,10 +670,21 @@ impl<'a> GenerateMethods<'a> {
             },
         );
 
+        let generic = if method
+            .fields
+            .as_ref()
+            .map(|f| f.iter().all(|f| !is_chatid(&f.types)))
+            .unwrap_or(true)
+        {
+            quote!()
+        } else {
+            quote! { , V }
+        };
+
         let comment = method.description.concat().into_comment();
         let res = quote! {
             #comment
-            pub fn #fn_name <'a> (&'a self, #( #typenames: #types ),*) -> #returntype<'a> {
+            pub fn #fn_name <'a #generic> (&'a self, #( #typenames: #types ),*) -> #returntype<'a #generic> {
                 #returntype {
                     bot: self,
                     #( #typenames , )*

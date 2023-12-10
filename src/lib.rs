@@ -45,7 +45,7 @@
 //! let bytes = vec![1,2,3];
 //! client
 //!     .build_send_photo(
-//!         &crate::botapi::gen_types::ChatHandle::ChatId(message.get_chat().get_id()),
+//!         message.get_chat().get_id(),
 //!            FileData::Bytes(bytes),
 //!     )
 //!     .caption("If you do not solve this captcha correctly you will be terminated by memetic kill agent")
