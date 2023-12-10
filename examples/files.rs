@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
                         .unwrap_or_default()
                 );
                 bot.send_document(
-                    chat.get_id(),
+                    &botapi::gen_types::ChatHandle::ChatId(chat.get_id()),
                     None,
                     filedata,
                     None,

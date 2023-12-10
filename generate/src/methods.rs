@@ -28,7 +28,7 @@ impl<'a> GenerateMethods<'a> {
         let this = Arc::clone(self);
         let choosetype = ChooseType::new(Arc::clone(&self.spec), move |opts| {
             if is_chatid(opts.types) {
-                "i64".to_owned()
+                "ChatHandle".to_owned()
             } else if opts.types.len() > 1 {
                 this.get_multitype_by_vec(opts.types).unwrap().to_owned()
             } else {
@@ -120,7 +120,7 @@ impl<'a> GenerateMethods<'a> {
             |f| {
                 f.iter()
                     .map(|f| {
-                        if !f.required || is_primative(&f.types[0]) || is_inputfile(f) {
+                        if !f.required || is_primative(&f.types) || is_inputfile(f) {
                             quote!()
                         } else {
                             quote! { & }

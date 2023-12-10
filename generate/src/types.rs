@@ -39,7 +39,7 @@ impl<'a> GenerateTypes<'a> {
                     INPUT_FILE.to_owned()
                 } else {
                     if is_chatid(types) {
-                        "f64".to_owned()
+                        "ChatHandle".to_owned()
                     } else if types.len() > 1 {
                         get_multitype_name_types(&name, types)
                     } else if nested == 0 {
@@ -143,8 +143,10 @@ impl<'a> GenerateTypes<'a> {
         let extra = self.generate_method_multitypes()?;
         let uses = self.generate_use()?;
         let tests = self.generate_test();
+        let chatid = self.generate_chat_enum();
         let res = quote! {
             #uses
+            #chatid
             #( #traits )*
             #( #structs )*
             #( #impls )*
@@ -193,6 +195,33 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    /// Generates enum for special type that is either a chat id or chat username
+    fn generate_chat_enum(&self) -> TokenStream {
+        quote! {
+            #[derive(Serialize, Deserialize, Hash, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+            #[serde(untagged)]
+            pub enum ChatHandle {
+                Username(String),
+                ChatId(i64)
+            }
+
+            impl ToString for ChatHandle {
+                fn to_string(&self) -> String {
+                    match self {
+                        Self::Username(u) => u.to_string(),
+                        Self::ChatId(i) => i.to_string()
+                    }
+                }
+            }
+
+            impl Default for ChatHandle {
+                fn default() -> Self {
+                    Self::ChatId(0)
+                }
+            }
+        }
+    }
+
     /// Generate a special helper type to treat "Update" as an enum
     fn generate_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
@@ -204,7 +233,7 @@ impl<'a> GenerateTypes<'a> {
                     let comment = field.description.into_comment();
                     let name = get_field_name(field);
                     let fieldname = format_ident!("get_{}", name);
-                    let primative = is_primative(&field.types[0]);
+                    let primative = is_primative(&field.types);
 
                     let unbox = self
                         .choose_type
@@ -446,7 +475,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_multitype_enum_return(&self, types: &[String]) -> Result<TokenStream> {
         if types.len() < 2 {
             Ok(quote!())
-        } else if types.iter().all(|v| !is_primative(v)) {
+        } else if types.iter().all(|t| !is_primative(&[t])) {
             Ok(quote!())
         } else {
             let res = if !is_inputfile_types(&types) {
@@ -931,7 +960,7 @@ impl<'a> GenerateTypes<'a> {
                 let fieldname_ref = format_ident!("get_{}_ref", name);
                 let fieldname_set = format_ident!("set_{}", name);
                 let returnname = format_ident!("{}", name);
-                let primative = is_primative(&f.types[0]);
+                let primative = is_primative(&f.types);
                 let boxed = self.spec.check_parent(t, &f.types[0]);
                 let unbox = &self
                     .choose_type
@@ -1244,7 +1273,7 @@ impl<'a> GenerateTypes<'a> {
                     let comment = f.description.into_comment();
                     let name = get_field_name(f);
                     let fieldname = format_ident!("get_{}", name);
-                    let primative = is_primative(&f.types[0]);
+                    let primative = is_primative(&f.types);
 
                     let unbox = self
                         .choose_type
@@ -1356,7 +1385,7 @@ impl<'a> GenerateTypes<'a> {
                 let fieldname_ref = format_ident!("get_{}_ref", name);
 
                 let returnname = format_ident!("{}", name);                
-                let primative = is_primative(&f.types[0]);
+                let primative = is_primative(&f.types);
                 let unbox = self
                     .choose_type
                     .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)

@@ -10,7 +10,7 @@ pub(crate) trait ChooserFn {
 
 pub(crate) fn no_lifetime(f: &Field) -> bool {
     let l = is_json(f) || is_inputfile(f);
-    l || f.types.iter().any(|t| is_primative(t))
+    (l || is_primative(&[&f.types[0]])) && !is_chatid(&f.types)
 }
 
 impl<F> ChooserFn for F
@@ -92,7 +92,7 @@ where
     let name = format_ident!("{}", name.as_ref());
     let types = types.map(|v| {
         let t = format_ident!("{}", v.as_ref());
-        if is_primative(v) {
+        if is_primative(&[v]) {
             quote! {  #name::#t(thing) => thing.to_string() }
         } else {
             quote! { #name::#t(thing) => serde_json::to_string(thing).unwrap_or_else(|err| format!("invalid: {err}") ) }
@@ -235,7 +235,7 @@ impl<'a> ChooseType<'a> {
     {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
-        let primative = is_primative(&type_without_array(&types[0])) && !owned;
+        let primative = is_primative(&[type_without_array(&types[0])]) && !owned;
         let opts = TypeChooserOpts {
             types,
             is_media,
@@ -298,7 +298,7 @@ impl<'a> ChooseType<'a> {
             quote!(#res)
         };
 
-        let t = if !primative {
+        let t = if !primative || is_chatid(types) {
             if let Some(lifetime) = lifetime {
                 let lifetime = lifetime();
                 quote! { & #lifetime #t }
@@ -358,15 +358,25 @@ pub(crate) fn is_json(field: &Field) -> bool {
 }
 
 /// Returns true if a REST type is primative (does not map to a serde type)
-pub(crate) fn is_primative<T>(field: T) -> bool
+pub(crate) fn is_primative<T>(field: &[T]) -> bool
 where
     T: AsRef<str>,
 {
-    match field.as_ref() {
-        "Integer" => true,
-        "Boolean" => true,
-        "Float" => true,
-        _ => false,
+    if is_chatid(
+        &field
+            .iter()
+            .map(|v| v.as_ref().to_owned())
+            .collect::<Vec<String>>(),
+    ) {
+        false
+    } else {
+        let field = &field[0];
+        match field.as_ref() {
+            "Integer" => true,
+            "Boolean" => true,
+            "Float" => true,
+            _ => false,
+        }
     }
 }
 
