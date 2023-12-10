@@ -1,4 +1,4 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use crate::gen_types::ResponseParameters;
 use anyhow::Result;
@@ -18,6 +18,41 @@ pub struct Response {
     pub error_code: Option<i64>,
     pub description: Option<String>,
     pub parameters: Option<ResponseParameters>,
+    #[serde(skip, default)]
+    pub floods: Vec<ResponseFlood>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ResponseFlood {
+    pub ok: bool,
+    pub result: Option<serde_json::Value>,
+    pub error_code: Option<i64>,
+    pub description: Option<String>,
+    pub parameters: Option<ResponseParameters>,
+}
+
+impl Response {
+    /// If this response as a retry_after parameter, async wait this many seconds
+    /// returns true if a retry is required
+    pub async fn wait(&self) -> bool {
+        if let Some(ref params) = self.parameters {
+            if let Some(retry) = params.get_retry_after() {
+                tokio::time::sleep(Duration::from_secs(retry as u64)).await;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn get_flood(&self) -> ResponseFlood {
+        ResponseFlood {
+            ok: self.ok,
+            result: self.result.clone(),
+            error_code: self.error_code.clone(),
+            description: self.description.clone(),
+            parameters: self.parameters.clone(),
+        }
+    }
 }
 
 /// Default result type retruned by API calls.
@@ -27,6 +62,7 @@ pub type BotResult<T> = Result<T, ApiError>;
 struct BotState {
     client: reqwest::Client,
     token: String,
+    auto_wait: bool,
 }
 
 #[derive(Debug)]
@@ -102,13 +138,14 @@ impl Default for Response {
             error_code: None,
             description: None,
             parameters: None,
+            floods: Vec::new(),
         }
     }
 }
 
 impl Bot {
-    /// Instantiate bot using token
-    pub fn new<T>(token: T) -> Result<Self>
+    /// Instantiate bot using token optionally enabling autoretry on flood wait
+    pub fn new_auto_wait<T>(token: T, auto_wait: bool) -> Result<Self>
     where
         T: Into<String>,
     {
@@ -116,7 +153,16 @@ impl Bot {
         Ok(Self(Arc::new(BotState {
             client,
             token: token.into(),
+            auto_wait,
         })))
+    }
+
+    /// Instantiate bot using token
+    pub fn new<T>(token: T) -> Result<Self>
+    where
+        T: Into<String>,
+    {
+        Self::new_auto_wait(token, false)
     }
 
     /// generate an api endpoint from bot token
@@ -130,32 +176,63 @@ impl Bot {
         T: Serialize,
     {
         let endpoint = self.get_endpoint(endpoint);
-        let resp = self
-            .0
-            .client
-            .post(endpoint)
-            .query(&body)
-            .send()
-            .await
-            .map_err(|e| e.without_url())?;
-        let bytes = resp.bytes().await?;
-        let resp: Response = serde_json::from_slice(&bytes)?;
-        Ok(resp)
+        let mut floods = if self.0.auto_wait {
+            Some(Vec::<ResponseFlood>::new())
+        } else {
+            None
+        };
+        loop {
+            let resp = self
+                .0
+                .client
+                .post(&endpoint)
+                .query(&body)
+                .send()
+                .await
+                .map_err(|e| e.without_url())?;
+            let bytes = resp.bytes().await?;
+            let mut resp: Response = serde_json::from_slice(&bytes)?;
+            if self.0.auto_wait && resp.wait().await {
+                floods.as_mut().unwrap().push(resp.get_flood());
+                continue;
+            } else {
+                if let Some(floods) = floods {
+                    resp.floods = floods;
+                }
+                return Ok(resp);
+            }
+        }
     }
 
     /// HTTP post helper with empty body
     pub async fn post_empty(&self, endpoint: &str) -> BotResult<Response> {
         let endpoint = self.get_endpoint(endpoint);
-        let resp = self
-            .0
-            .client
-            .post(endpoint)
-            .send()
-            .await
-            .map_err(|e| e.without_url())?;
-        let bytes = resp.bytes().await?;
-        let resp: Response = serde_json::from_slice(&bytes)?;
-        Ok(resp)
+        let mut floods = if self.0.auto_wait {
+            Some(Vec::<ResponseFlood>::new())
+        } else {
+            None
+        };
+        loop {
+            let resp = self
+                .0
+                .client
+                .post(&endpoint)
+                .send()
+                .await
+                .map_err(|e| e.without_url())?;
+            let bytes = resp.bytes().await?;
+            let mut resp: Response = serde_json::from_slice(&bytes)?;
+
+            if self.0.auto_wait && resp.wait().await {
+                floods.as_mut().unwrap().push(resp.get_flood());
+                continue;
+            } else {
+                if let Some(floods) = floods {
+                    resp.floods = floods;
+                }
+                return Ok(resp);
+            }
+        }
     }
 
     /// HTTP post helper with x-www-form-urlencode body and multipart/form-data
@@ -164,17 +241,22 @@ impl Bot {
         T: Serialize,
     {
         let endpoint = self.get_endpoint(endpoint);
+
         let resp = self
             .0
             .client
-            .post(endpoint)
+            .post(&endpoint)
             .query(&body)
             .multipart(data)
             .send()
             .await
             .map_err(|e| e.without_url())?;
         let bytes = resp.bytes().await?;
-        let resp: Response = serde_json::from_slice(&bytes)?;
+        let mut resp: Response = serde_json::from_slice(&bytes)?;
+        if self.0.auto_wait {
+            resp.wait().await;
+            resp.floods.push(resp.get_flood())
+        }
         Ok(resp)
     }
 }
