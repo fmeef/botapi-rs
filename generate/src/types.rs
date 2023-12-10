@@ -205,6 +205,18 @@ impl<'a> GenerateTypes<'a> {
                 ChatId(i64)
             }
 
+            impl From<i64> for ChatHandle {
+                fn from(value: i64) -> Self {
+                    Self::ChatId(value)
+                }
+            }
+
+            impl From<String> for ChatHandle {
+                fn from(value: String) -> Self {
+                    Self::Username(value)
+                }
+            }
+
             impl ToString for ChatHandle {
                 fn to_string(&self) -> String {
                     match self {
