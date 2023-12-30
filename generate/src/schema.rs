@@ -372,8 +372,20 @@ impl Spec {
     }
 
     /// Check if a field (by field name) should be Box<T>
-    pub(crate) fn check_parent(&self, parent: &Type, name: &str) -> bool {
-        let boxedcheck = format!("{}{}", name, parent.name);
-        self.is_boxed(boxedcheck) || parent.name == name
+    pub(crate) fn check_parent<T: AsRef<str>>(&self, parent: &Type, name: &[T]) -> bool {
+        name.iter()
+            .filter_map(|v| self.get_type(v))
+            .flat_map(|v| {
+                v.subtypes
+                    .iter()
+                    .flat_map(|v| v.iter())
+                    .filter_map(|v| self.get_type(v))
+                    .chain([v].into_iter())
+            })
+            .any(|v| {
+                let boxedcheck = format!("{}{}", v.name, parent.name);
+
+                self.is_boxed(boxedcheck) || parent.name == v.name
+            })
     }
 }

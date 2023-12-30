@@ -37,7 +37,7 @@
 //! ```
 //! ## Send messages or media
 //! ```no_run
-//! use botapi::gen_types::{FileData, Message};
+//! use botapi::gen_types::{FileData, Message, ReplyParametersBuilder};
 //! use botapi::bot::Bot;
 //! # tokio_test::block_on(async {
 //! # let message = Message::default();
@@ -49,7 +49,7 @@
 //!            FileData::Bytes(bytes),
 //!     )
 //!     .caption("If you do not solve this captcha correctly you will be terminated by memetic kill agent")
-//!     .reply_to_message_id(message.get_message_id())
+//!     .reply_parameters(&ReplyParametersBuilder::new(message.get_message_id()).build())
 //!     .build()
 //!     .await.unwrap();
 //! })

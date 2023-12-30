@@ -895,6 +895,18 @@ impl<'a> GenerateTypes<'a> {
             .spec
             .get_type(&typename.as_ref())
             .ok_or_else(|| anyhow!("type not found"))?;
+        let regular_type = t
+            .fields
+            .as_ref()
+            .map(|f| {
+                f.iter()
+                    .find(|f| f.name == "type")
+                    .map(|v| v.types.get(0))
+                    .flatten()
+            })
+            .flatten()
+            .map(|v| v.as_str());
+
         if t.fields.as_ref().map_or(0, |f| f.len()) == 0 {
             Ok(quote!())
         } else {
@@ -923,12 +935,17 @@ impl<'a> GenerateTypes<'a> {
                             } else {
                                 &t.name
                             };
-
-                            if !f.required {
-                                quote! { tg_type: Some(#typename.to_owned()) }
+                            if regular_type == Some("String") {
+                                if !f.required {
+                                    quote! { tg_type: Some(#typename.to_owned()) }
+                                } else {
+                                    quote! {
+                                        tg_type: #typename.to_owned(),
+                                    }
+                                }
                             } else {
                                 quote! {
-                                    tg_type: #typename.to_owned(),
+                                    tg_type,
                                 }
                             }
                         },
@@ -948,8 +965,18 @@ impl<'a> GenerateTypes<'a> {
                 .map(|v| format_ident!("{}", v))
                 .map(|v| quote! { #v: None });
 
+            let param = match regular_type {
+                Some("String") => quote!(),
+                Some(v) => {
+                    let v = format_ident!("{}", v);
+                    quote! {
+                        , tg_type: #v
+                    }
+                }
+                _ => quote!(),
+            };
             let res = quote! {
-                pub fn new( #( #fieldnames: #fieldtypes ),* ) -> Self {
+                pub fn new( #( #fieldnames: #fieldtypes ),*  #param ) -> Self {
                     Self {
                         #tgtype
                         #( #fieldnames_i, )*
@@ -973,7 +1000,7 @@ impl<'a> GenerateTypes<'a> {
                 let fieldname_set = format_ident!("set_{}", name);
                 let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types);
-                let boxed = self.spec.check_parent(t, &f.types[0]);
+                let boxed = self.spec.check_parent(t, &f.types);
                 let unbox = &self
                     .choose_type
                     .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
@@ -1143,7 +1170,7 @@ impl<'a> GenerateTypes<'a> {
         let tuple_create = t.pretty_fields().map(|f| {
             let fieldname = get_field_name(f);
             let fieldname = format_ident!("{}", fieldname);
-            let boxed = self.spec.check_parent(t, &f.types[0]);
+            let boxed = self.spec.check_parent(t, &f.types);
 
             let name = if boxed {
                 quote! { (* #fieldname) }

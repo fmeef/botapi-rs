@@ -243,15 +243,14 @@ impl<'a> ChooseType<'a> {
             name: name.as_ref(),
         };
 
-        let mytype = self.type_chooser.cb(&opts);
-        let mytype = type_mapper(&mytype);
-
         let checked = if let Some(parent) = parent {
-            self.spec.check_parent(parent, &mytype)
+            self.spec.check_parent(parent, &opts.types)
         } else {
             false
         };
 
+        let mytype = self.type_chooser.cb(&opts);
+        let mytype = type_mapper(&mytype);
         let t = if nested > 0 {
             let mytype = type_without_array(&mytype);
             let res = type_mapper(&mytype);
@@ -298,7 +297,7 @@ impl<'a> ChooseType<'a> {
             quote!(#res)
         };
 
-        let t = if !primative || is_chatid(types) {
+        let t = if !primative || is_chatid(types) || nested > 0 {
             if let Some(lifetime) = lifetime {
                 let lifetime = lifetime();
                 quote! { & #lifetime #t }
