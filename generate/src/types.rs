@@ -818,6 +818,7 @@ impl<'a> GenerateTypes<'a> {
             }
 
             #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            #[serde(untagged)]
             pub enum #input_file {
                 Bytes(FileBytes),
                 String(String),
