@@ -181,28 +181,28 @@ impl<'a> ChooseType<'a> {
         )
     }
 
-    pub(crate) fn choose_type_unbox<T>(
-        &self,
-        types: &[String],
-        parent: Option<&Type>,
-        name: &T,
-        optional: bool,
-        owned: bool,
-    ) -> Result<TokenStream>
-    where
-        T: AsRef<str>,
-    {
-        self.choose_type_private(
-            types,
-            parent,
-            name,
-            optional,
-            None::<Box<dyn FnOnce() -> TokenStream>>,
-            true,
-            owned,
-            false,
-        )
-    }
+    // pub(crate) fn choose_type_unbox<T>(
+    //     &self,
+    //     types: &[String],
+    //     parent: Option<&Type>,
+    //     name: &T,
+    //     optional: bool,
+    //     owned: bool,
+    // ) -> Result<TokenStream>
+    // where
+    //     T: AsRef<str>,
+    // {
+    //     self.choose_type_private(
+    //         types,
+    //         parent,
+    //         name,
+    //         optional,
+    //         None::<Box<dyn FnOnce() -> TokenStream>>,
+    //         true,
+    //         owned,
+    //         false,
+    //     )
+    // }
 
     pub(crate) fn choose_type_unbox_nowrap<T>(
         &self,

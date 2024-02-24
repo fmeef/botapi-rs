@@ -9,7 +9,7 @@ use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
 use regex::{escape, Regex};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 lazy_static! {
@@ -117,13 +117,13 @@ impl<'a> GenerateTypes<'a> {
                         self.generate_enum_str(subtypes.as_slice(), &v.name)
                             .unwrap()
                     };
-                    let name = format_ident!("{}", v.name);
-                    let methods = self.generate_enum_methods(v);
+                    // let name = format_ident!("{}", v.name);
+                    // let methods = self.generate_enum_methods(v);
                     quote! {
                         #e
-                        impl #name {
-                            #methods
-                        }
+                        // impl #name {
+                            // #methods
+                        // }
                     }
                 }
             }
@@ -166,7 +166,7 @@ impl<'a> GenerateTypes<'a> {
             use reqwest::multipart::Form;
             use crate::bot::Part;
             use std::default::Default;
-            use std::borrow::Cow;
+            // use std::borrow::Cow;
         })
     }
 
@@ -186,14 +186,14 @@ impl<'a> GenerateTypes<'a> {
             })
     }
 
-    fn has_method(&self, t: &Type, field: &Field) -> bool {
-        let common_methods = self.get_common_methods(t);
-        if let Some(fields) = t.fields.as_ref() {
-            fields.contains(field) || common_methods.contains(field)
-        } else {
-            common_methods.contains(field)
-        }
-    }
+    // fn has_method(&self, t: &Type, field: &Field) -> bool {
+    //     let common_methods = self.get_common_methods(t);
+    //     if let Some(fields) = t.fields.as_ref() {
+    //         fields.contains(field) || common_methods.contains(field)
+    //     } else {
+    //         common_methods.contains(field)
+    //     }
+    // }
 
     /// Generates enum for special type that is either a chat id or chat username
     fn generate_chat_enum(&self) -> TokenStream {
@@ -1112,13 +1112,9 @@ impl<'a> GenerateTypes<'a> {
                 let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types);
                 let boxed = self.spec.check_parent(t, &f.types);
-                let unbox = &self
-                    .choose_type
-                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
-                    .unwrap();
-
+    
                 
-     let unbox_nowrap = &self
+                let unbox_nowrap = &self
                     .choose_type
                     .choose_type_unbox_nowrap(f.types.as_slice(), Some(&t), &f.name, false, false)
                     .unwrap();
@@ -1309,208 +1305,208 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    fn generate_into_tuple(&self, t: &Type, is_trait: bool, public: bool) -> TokenStream {
-        let tuple_create = t.pretty_fields().map(|f| {
-            let fieldname = get_field_name(f);
-            let boxed = self.spec.check_parent(t, &f.types);
-            let fieldname = format_ident!("{}", fieldname);
+    // fn generate_into_tuple(&self, t: &Type, is_trait: bool, public: bool) -> TokenStream {
+    //     let tuple_create = t.pretty_fields().map(|f| {
+    //         let fieldname = get_field_name(f);
+    //         let boxed = self.spec.check_parent(t, &f.types);
+    //         let fieldname = format_ident!("{}", fieldname);
 
-            let name = if boxed {
-                quote! { (* #fieldname) }
-            } else {
-                quote! { #fieldname }
-            };
+    //         let name = if boxed {
+    //             quote! { (* #fieldname) }
+    //         } else {
+    //             quote! { #fieldname }
+    //         };
 
-            let selfname = if ! should_wrap(&f.types) {
-                quote! { self.#fieldname }
-            } else {
-                quote! { (*self. #fieldname) }
-            };
+    //         let selfname = if ! should_wrap(&f.types) {
+    //             quote! { self.#fieldname }
+    //         } else {
+    //             quote! { (*self. #fieldname) }
+    //         };
 
-            if f.required {
-                quote! { #selfname }
-            } else {
-                quote! { self. #fieldname .map(|#fieldname| #name ) }
-            }
-        });
+    //         if f.required {
+    //             quote! { #selfname }
+    //         } else {
+    //             quote! { self. #fieldname .map(|#fieldname| #name ) }
+    //         }
+    //     });
 
-        let pf = t.pretty_fields().collect_vec();
+    //     let pf = t.pretty_fields().collect_vec();
 
-        let tuple_create = match pf.len() {
-            0 => quote! { () },
-            1 => quote! { #( #tuple_create )* },
-            _ => quote! { ( #( #tuple_create ),* ) },
-        };
+    //     let tuple_create = match pf.len() {
+    //         0 => quote! { () },
+    //         1 => quote! { #( #tuple_create )* },
+    //         _ => quote! { ( #( #tuple_create ),* ) },
+    //     };
 
-        let tu = pf.iter().map(|f| {
-            let unbox = &self
-                .choose_type
-                .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, true)
-                .unwrap();
-            if f.required {
-                quote! { #unbox }
-            } else {
-                quote! { Option<#unbox> }
-            }
-        });
+    //     let tu = pf.iter().map(|f| {
+    //         let unbox = &self
+    //             .choose_type
+    //             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, true)
+    //             .unwrap();
+    //         if f.required {
+    //             quote! { #unbox }
+    //         } else {
+    //             quote! { Option<#unbox> }
+    //         }
+    //     });
 
-        let public = if public {
-            quote! {
-                pub
-            }
-        } else {
-            quote!()
-        };
-        let tu = match pf.len() {
-            0 => quote! {},
-            1 => quote! { -> #( #tu )* },
-            _ => quote! { -> ( #( #tu ),* ) },
-        };
+    //     let public = if public {
+    //         quote! {
+    //             pub
+    //         }
+    //     } else {
+    //         quote!()
+    //     };
+    //     let tu = match pf.len() {
+    //         0 => quote! {},
+    //         1 => quote! { -> #( #tu )* },
+    //         _ => quote! { -> ( #( #tu ),* ) },
+    //     };
 
-        let doctypes = pf.iter().map(|f| f.name.as_str()).join(", ");
-        let comment = format!(
-            "Consumes and deconstructs this type into a tuple with one element per field.
-            Tuple type returned is: ({})",
-            doctypes
-        )
-        .into_comment();
+    //     let doctypes = pf.iter().map(|f| f.name.as_str()).join(", ");
+    //     let comment = format!(
+    //         "Consumes and deconstructs this type into a tuple with one element per field.
+    //         Tuple type returned is: ({})",
+    //         doctypes
+    //     )
+    //     .into_comment();
 
-        if is_trait {
-            quote! {
-                 #comment
-                 fn into_tuple(self) #tu;
-            }
-        } else {
-            quote! {
-                #comment
-                #public fn into_tuple(self) #tu  {
-                    #tuple_create
-                }
-            }
-        }
-    }
+    //     if is_trait {
+    //         quote! {
+    //              #comment
+    //              fn into_tuple(self) #tu;
+    //         }
+    //     } else {
+    //         quote! {
+    //             #comment
+    //             #public fn into_tuple(self) #tu  {
+    //                 #tuple_create
+    //             }
+    //         }
+    //     }
+    // }
 
-    pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-        let mut set = HashSet::<&Field>::new();
+    // pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
+    //     let mut set = HashSet::<&Field>::new();
 
-        for field in t.pretty_fields() {
-            let mt = field.types.first().unwrap();
-            if is_json(field) && is_array(mt) == 0 {
-                let t = self
-                    .spec
-                    .get_type(mt)
-                    .expect(&format!("invalid type {}", mt));
-                let hashset = self.get_common_methods_recursive(&t);
-                set = set.union(&hashset).cloned().collect();
-            }
-        }
-        set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
-    }
+    //     for field in t.pretty_fields() {
+    //         let mt = field.types.first().unwrap();
+    //         if is_json(field) && is_array(mt) == 0 {
+    //             let t = self
+    //                 .spec
+    //                 .get_type(mt)
+    //                 .expect(&format!("invalid type {}", mt));
+    //             let hashset = self.get_common_methods_recursive(&t);
+    //             set = set.union(&hashset).cloned().collect();
+    //         }
+    //     }
+    //     set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
+    // }
 
-    pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-        let mut set = t.pretty_fields().collect::<HashSet<&Field>>();
-        match t.subtypes {
-            None => set,
-            Some(ref subtypes) => {
-                for subtype in subtypes {
-                    if let Some(t) = self.spec.get_type(subtype) {
-                        println!(
-                            "subtype {}",
-                            t.subtypes.as_ref().map(|t| t.len()).unwrap_or(0)
-                        );
-                        let hashset = self.get_common_methods_recursive(t);
-                        set = set.intersection(&hashset).cloned().collect();
-                    }
-                }
-                set
-            }
-        }
-    }
+    // pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
+    //     let mut set = t.pretty_fields().collect::<HashSet<&Field>>();
+    //     match t.subtypes {
+    //         None => set,
+    //         Some(ref subtypes) => {
+    //             for subtype in subtypes {
+    //                 if let Some(t) = self.spec.get_type(subtype) {
+    //                     println!(
+    //                         "subtype {}",
+    //                         t.subtypes.as_ref().map(|t| t.len()).unwrap_or(0)
+    //                     );
+    //                     let hashset = self.get_common_methods_recursive(t);
+    //                     set = set.intersection(&hashset).cloned().collect();
+    //                 }
+    //             }
+    //             set
+    //         }
+    //     }
+    // }
 
-    pub(crate) fn get_common_methods(&'a self, t: &Type) -> HashSet<&'a Field> {
-        let mut res = HashSet::<&Field>::new();
-        if let Some(subtypes) = t.subtypes.as_ref() {
-            if let Some(first) = subtypes.first() {
-                let first = self.spec.get_type(first).unwrap();
-                res = first.pretty_fields().collect();
-            }
-            for t in subtypes {
-                let t = self.spec.get_type(t).unwrap();
-                let hashset = self.get_common_methods_recursive(t);
-                res = res.intersection(&hashset).cloned().collect();
-            }
-        }
-        res
-    }
+    // pub(crate) fn get_common_methods(&'a self, t: &Type) -> HashSet<&'a Field> {
+    //     let mut res = HashSet::<&Field>::new();
+    //     if let Some(subtypes) = t.subtypes.as_ref() {
+    //         if let Some(first) = subtypes.first() {
+    //             let first = self.spec.get_type(first).unwrap();
+    //             res = first.pretty_fields().collect();
+    //         }
+    //         for t in subtypes {
+    //             let t = self.spec.get_type(t).unwrap();
+    //             let hashset = self.get_common_methods_recursive(t);
+    //             res = res.intersection(&hashset).cloned().collect();
+    //         }
+    //     }
+    //     res
+    // }
 
-    fn generate_enum_methods(&self, t: &Type) -> TokenStream {
-        if t.is_media() {
-            return quote!();
-        }
-        if let Some(subtypes) = t.subtypes.as_ref() {
-            // let methods = self
-            //     .get_common_methods(t)
-            //     .iter()
-            //     .map(|f| {
-            //         let comment = f.description.into_comment();
-            //         let name = get_field_name(f);
-            //         let fieldname = format_ident!("get_{}", name);
-            //         let primative = is_primative(&f.types);
+    // fn generate_enum_methods(&self, t: &Type) -> TokenStream {
+    //     if t.is_media() {
+    //         return quote!();
+    //     }
+    //     if let Some(subtypes) = t.subtypes.as_ref() {
+    //      let methods = self
+    //          .get_common_methods(t)
+    //          .iter()
+    //          .map(|f| {
+    //              let comment = f.description.into_comment();
+    //              let name = get_field_name(f);
+    //              let fieldname = format_ident!("get_{}", name);
+    //              let primative = is_primative(&f.types);
 
-            //         let unbox = self
-            //             .choose_type
-            //             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
-            //             .unwrap();
+    //              let unbox = self
+    //                  .choose_type
+    //                  .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
+    //                  .unwrap();
 
-            //         let is_str = is_str_field(f);
-            //         let ret = if is_str {
-            //             quote! { Cow<'a, str> }
-            //         } else if (f.required && primative) || (!f.required && primative) {
-            //             unbox
-            //         } else {
-            //             quote! { Cow<'a, #unbox> }
-            //         };
+    //              let is_str = is_str_field(f);
+    //              let ret = if is_str {
+    //                  quote! { Cow<'a, str> }
+    //              } else if (f.required && primative) || (!f.required && primative) {
+    //                  unbox
+    //              } else {
+    //                  quote! { Cow<'a, #unbox> }
+    //              };
 
-            //         let ret = if f.required {
-            //             ret
-            //         } else {
-            //             quote! { Option<#ret> }
-            //         };
+    //              let ret = if f.required {
+    //                  ret
+    //              } else {
+    //                  quote! { Option<#ret> }
+    //              };
 
-            //         let match_arms = subtypes
-            //             .iter()
-            //             .map(|t| get_type_name_str(t))
-            //             .map(|t| format_ident!("{}", t))
-            //             .map(|t| {
-            //                 quote! {
-            //                     Self::#t(ref v) => v.#fieldname()
-            //                 }
-            //             });
+    //              let match_arms = subtypes
+    //                  .iter()
+    //                  .map(|t| get_type_name_str(t))
+    //                  .map(|t| format_ident!("{}", t))
+    //                  .map(|t| {
+    //                      quote! {
+    //                          Self::#t(ref v) => v.#fieldname()
+    //                      }
+    //                  });
 
-            //         let mat = quote! {
-            //             match self {
-            //                 #( #match_arms ),*
-            //             }
-            //         };
+    //              let mat = quote! {
+    //                  match self {
+    //                      #( #match_arms ),*
+    //                  }
+    //              };
 
-            //         quote! {
-            //             #comment
-            //             pub fn #fieldname<'a>(&'a self) -> #ret  {
-            //                 #mat
-            //             }
-            //         }
-            //     })
-            //     .collect_vec();
+    //              quote! {
+    //                  #comment
+    //                  pub fn #fieldname<'a>(&'a self) -> #ret  {
+    //                      #mat
+    //                  }
+    //              }
+    //          })
+    //          .collect_vec();
 
-            // quote! {
-            //     #( #methods )*
-            // }
+    //      quote! {
+    //          #( #methods )*
+    //      }
 
-            quote!()
-        } else {
-            quote!()
-        }
-    }
+    //         quote!()
+    //     } else {
+    //         quote!()
+    //     }
+    // }
 
     /// Generate an impl with getters to allow type erasure
     fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
@@ -1570,10 +1566,10 @@ impl<'a> GenerateTypes<'a> {
 
                 let returnname = format_ident!("{}", name);                
                 let primative = is_primative(&f.types);
-                let unbox = self
-                    .choose_type
-                    .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
-                    .unwrap();
+                // let unbox = self
+                //     .choose_type
+                //     .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
+                //     .unwrap();
 
                 let unbox_nowrap = self
                     .choose_type
@@ -1641,7 +1637,7 @@ impl<'a> GenerateTypes<'a> {
             })
             .collect_vec();
 
-        let into_tuple = self.generate_into_tuple(t, true, true);
+        // let into_tuple = self.generate_into_tuple(t, true, true);
 
         let res = quote! {
             trait #typename #supertraits {
