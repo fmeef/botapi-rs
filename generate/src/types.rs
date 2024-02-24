@@ -860,7 +860,7 @@ impl<'a> GenerateTypes<'a> {
             }
 
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
-            struct Unbox<T>(T);
+            pub struct Unbox<T>(T);
 
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
             pub struct BoxWrapper<T>(T);
@@ -870,12 +870,12 @@ impl<'a> GenerateTypes<'a> {
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
              
             {
-                fn inner_ref<'a>(&'a self) -> &'a T {
+                pub fn inner_ref<'a>(&'a self) -> &'a T {
                     &self.0                
                 }
 
                 
-                fn consume(self) -> T {
+                pub fn consume(self) -> T {
                     *self.0                
                 }
             }
@@ -885,12 +885,12 @@ impl<'a> GenerateTypes<'a> {
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
              
             {
-                fn inner_ref<'a>(&'a self) -> &'a T {
+                pub fn inner_ref<'a>(&'a self) -> &'a T {
                     &self.0.0                
                 }
 
                 
-                fn consume(self) -> T {
+                pub fn consume(self) -> T {
                     self.0.0                
                 }
             }
@@ -1740,10 +1740,10 @@ impl<'a> GenerateTypes<'a> {
                 if serde_skip {
                     quote! {
                         #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
-                        #name
+                        pub #name
                     }
                 } else {
-                    quote! { #name }
+                    quote! { pub #name }
                 }
             }
         });
