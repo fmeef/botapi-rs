@@ -586,7 +586,7 @@ impl<'a> GenerateTypes<'a> {
                 } else if boxed {
                     quote! { BoxWrapper(#fieldname) }
                 } else {
-                    quote! { BoxWrapper(#fieldname) }
+                    quote! { BoxWrapper(Unbox(#fieldname)) }
                 };
 
                 let fieldinst = if f.required {
@@ -845,9 +845,12 @@ impl<'a> GenerateTypes<'a> {
             }
 
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
+            struct Unbox<T>(T);
+
+            #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
             pub struct BoxWrapper<T>(T);
 
-            impl <'de, T> BoxWrapper<T>
+            impl <'de, T> BoxWrapper<Box<T>>
             where
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
              
@@ -858,11 +861,26 @@ impl<'a> GenerateTypes<'a> {
 
                 
                 fn into_inner(self) -> T {
-                    self.0                
+                    *self.0                
+                }
+            }
+        
+            impl <'de, T> BoxWrapper<Unbox<T>>
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
+             
+            {
+                fn inner_ref<'a>(&'a self) -> &'a T {
+                    &self.0.0                
+                }
+
+                
+                fn into_inner(self) -> T {
+                    self.0.0                
                 }
             }
 
-            impl <'de, T> std::ops::Deref for BoxWrapper<T>
+            impl <'de, T> std::ops::Deref for BoxWrapper<Box<T>>
             where
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
             {
@@ -873,6 +891,35 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
+            
+            impl <'de, T> std::ops::Deref for BoxWrapper<Unbox<T>>
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            {
+
+                type Target = T;
+                fn deref(&self) -> &Self::Target {
+                    &self.0.0            
+                }
+            }
+
+            impl <'de, T> std::convert::AsRef<T> for BoxWrapper<Box<T>>       
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            {
+                fn as_ref(&self) -> &T {
+                    self.0.as_ref()
+                }
+            }
+
+            impl <'de, T> std::convert::AsRef<T> for BoxWrapper<Unbox<T>>       
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            {
+                fn as_ref(&self) -> &T {
+                    &self.0.0
+                }
+            }
 
             // impl <T, U> BoxWrapper<T, U>
             // where
@@ -1015,7 +1062,7 @@ impl<'a> GenerateTypes<'a> {
                     } else if boxed {
                         quote! { #v: BoxWrapper(#v) }
                     } else {
-                        quote! { #v: BoxWrapper(#v) }
+                        quote! { #v: BoxWrapper(Unbox(#v)) }
                     }
                 });
 
@@ -1096,7 +1143,7 @@ impl<'a> GenerateTypes<'a> {
                         }
                     } else {
                          quote! {
-                            self.#returnname = BoxWrapper(#assign);
+                            self.#returnname = BoxWrapper(Unbox(#assign));
                         }
                     }
                 } else {
@@ -1105,7 +1152,7 @@ impl<'a> GenerateTypes<'a> {
                     } else if boxed {
                         quote! { BoxWrapper(#assign) }
                     } else {
-                        quote! { BoxWrapper(#assign) }
+                        quote! { BoxWrapper(Unbox(#assign)) }
                     };
                     let optionassign = quote! {
                         if let Some(#returnname) = #returnname {
@@ -1158,7 +1205,7 @@ impl<'a> GenerateTypes<'a> {
                 let refvaccess = if is_str {
                     quote! { v.as_str() }
                 } else if should_wrap(&f.types) && boxed {
-                    quote! { v.inner_ref().as_ref() }
+                    quote! { v.inner_ref() }
                 }else if should_wrap(&f.types) {
                     quote! { v.inner_ref() }
                 } else if primative {

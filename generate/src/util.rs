@@ -360,7 +360,11 @@ impl<'a> ChooseType<'a> {
             && !is_inputfile_types(types)
             && name.as_ref() != "type"
         {
-            quote! { BoxWrapper<#t> }
+            if checked && !(is_media && name.as_ref() == "media") && !unbox {
+                quote! { BoxWrapper<#t> }
+            } else {
+                quote! { BoxWrapper<Unbox<#t>> }
+            }
         } else {
             t
         };
