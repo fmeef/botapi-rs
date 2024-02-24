@@ -700,62 +700,62 @@ impl<'a> GenerateTypes<'a> {
         name: &str,
         tag: &str,
     ) -> Result<TokenStream> {
-       let e = if types.len() > 0 {
-        let names_iter = types
-            .values()
-            .map(|v| get_type_name_str(v))
-            .map(|v| format_ident!("{}", v));
+        let e = if types.len() > 0 {
+            let names_iter = types
+                .values()
+                .map(|v| get_type_name_str(v))
+                .map(|v| format_ident!("{}", v));
 
-        let first_name = types
-            .values()
-            .map(|v| get_type_name_str(v))
-            .map(|v| format_ident!("{}", v))
-            .next();
-        let types_iter = types
-            .values()
-            .map(|v| type_without_array(v))
-            .map(|v| type_mapper(&v).to_owned())
-            .map(|v| format_ident!("{}", v));
-        let first_type = types
-            .values()
-            .map(|v| type_without_array(v))
-            .map(|v| type_mapper(&v).to_owned())
-            .map(|v| format_ident!("{}", v))
-            .next();
+            let first_name = types
+                .values()
+                .map(|v| get_type_name_str(v))
+                .map(|v| format_ident!("{}", v))
+                .next();
+            let types_iter = types
+                .values()
+                .map(|v| type_without_array(v))
+                .map(|v| type_mapper(&v).to_owned())
+                .map(|v| format_ident!("{}", v));
+            let first_type = types
+                .values()
+                .map(|v| type_without_array(v))
+                .map(|v| type_mapper(&v).to_owned())
+                .map(|v| format_ident!("{}", v))
+                .next();
 
-        let name = format_ident!("{}", name);
-        let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
-            quote! {
-                impl Default for #name {
-                      fn default() -> Self {
-                            #name::#first_name(#first_type::default())
+            let name = format_ident!("{}", name);
+            let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+                quote! {
+                    impl Default for #name {
+                          fn default() -> Self {
+                                #name::#first_name(#first_type::default())
+                          }
                       }
-                  }
+                }
+            } else {
+                quote!()
+            };
+
+            let tags = types.keys();
+
+            //let enum_methods = self.generate_enum_methods()
+
+            quote! {
+                #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+                #[serde(tag = #tag)]
+                pub enum #name {
+                    #(
+                        #[serde(rename = #tags)]
+                        #names_iter(#types_iter)
+                    ),*
+                }
+                #default
             }
         } else {
-            quote!()
-        };
-
-        let tags = types.keys();
-
-        //let enum_methods = self.generate_enum_methods()
-
-         quote! {
-            #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-            #[serde(tag = #tag)]
-            pub enum #name {
-                #(
-                    #[serde(rename = #tags)]
-                    #names_iter(#types_iter)
-                ),*
+            quote! {
+               #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+               pub struct #name();
             }
-            #default
-        }
-        } else {
-            quote! { 
-                #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
-                pub struct #name();
-             }   
         };
         Ok(e)
     }
@@ -766,60 +766,59 @@ impl<'a> GenerateTypes<'a> {
         N: AsRef<str>,
         I: AsRef<str>,
     {
-
         let name = format_ident!("{}", name.as_ref());
-       let e =  if types.len() > 0 {
-        let names_iter = types
-            .iter()
-            .map(|v| get_type_name_str(v))
-            .map(|v| format_ident!("{}", v));
+        let e = if types.len() > 0 {
+            let names_iter = types
+                .iter()
+                .map(|v| get_type_name_str(v))
+                .map(|v| format_ident!("{}", v));
 
-        let first_name = types
-            .iter()
-            .map(|v| get_type_name_str(v))
-            .map(|v| format_ident!("{}", v))
-            .next();
-        let types_iter = types
-            .iter()
-            .map(|v| type_without_array(v))
-            .map(|v| type_mapper(&v).to_owned())
-            .map(|v| format_ident!("{}", v));
-        let first_type = types
-            .iter()
-            .map(|v| type_without_array(v))
-            .map(|v| type_mapper(&v).to_owned())
-            .map(|v| format_ident!("{}", v))
-            .next();
+            let first_name = types
+                .iter()
+                .map(|v| get_type_name_str(v))
+                .map(|v| format_ident!("{}", v))
+                .next();
+            let types_iter = types
+                .iter()
+                .map(|v| type_without_array(v))
+                .map(|v| type_mapper(&v).to_owned())
+                .map(|v| format_ident!("{}", v));
+            let first_type = types
+                .iter()
+                .map(|v| type_without_array(v))
+                .map(|v| type_mapper(&v).to_owned())
+                .map(|v| format_ident!("{}", v))
+                .next();
 
-             let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
-            quote! {
-                impl Default for #name {
-                      fn default() -> Self {
-                            #name::#first_name(#first_type::default())
+            let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+                quote! {
+                    impl Default for #name {
+                          fn default() -> Self {
+                                #name::#first_name(#first_type::default())
+                          }
                       }
-                  }
-            }
-        } else {
-            quote!()
-        };
+                }
+            } else {
+                quote!()
+            };
 
-        //let enum_methods = self.generate_enum_methods()
+            //let enum_methods = self.generate_enum_methods()
 
-        quote! {
-            #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-            #[serde(untagged)]
-            pub enum #name {
-                #(
-                    #names_iter(#types_iter)
-                ),*
+            quote! {
+                #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+                #[serde(untagged)]
+                pub enum #name {
+                    #(
+                        #names_iter(#types_iter)
+                    ),*
+                }
+                #default
             }
-            #default
-        }
         } else {
             quote! {
                  #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
                 pub struct #name();
-            }  
+            }
         };
         Ok(e)
     }
@@ -867,31 +866,31 @@ impl<'a> GenerateTypes<'a> {
 
             impl <'de, T> BoxWrapper<Box<T>>
             where
-                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
-             
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+
             {
                 pub fn inner_ref<'a>(&'a self) -> &'a T {
-                    &self.0                
+                    &self.0
                 }
 
-                
+
                 pub fn consume(self) -> T {
-                    *self.0                
+                    *self.0
                 }
             }
-        
+
             impl <'de, T> BoxWrapper<Unbox<T>>
             where
-                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
-             
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+
             {
                 pub fn inner_ref<'a>(&'a self) -> &'a T {
-                    &self.0.0                
+                    &self.0.0
                 }
 
-                
+
                 pub fn consume(self) -> T {
-                    self.0.0                
+                    self.0.0
                 }
             }
 
@@ -902,11 +901,11 @@ impl<'a> GenerateTypes<'a> {
 
                 type Target = T;
                 fn deref(&self) -> &Self::Target {
-                    &self.0            
+                    &self.0
                 }
             }
 
-            
+
             impl <'de, T> std::ops::Deref for BoxWrapper<Unbox<T>>
             where
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
@@ -914,11 +913,11 @@ impl<'a> GenerateTypes<'a> {
 
                 type Target = T;
                 fn deref(&self) -> &Self::Target {
-                    &self.0.0            
+                    &self.0.0
                 }
             }
 
-            impl <'de, T> std::convert::AsRef<T> for BoxWrapper<Box<T>>       
+            impl <'de, T> std::convert::AsRef<T> for BoxWrapper<Box<T>>
             where
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
             {
@@ -927,7 +926,7 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
-            impl <'de, T> std::convert::AsRef<T> for BoxWrapper<Unbox<T>>       
+            impl <'de, T> std::convert::AsRef<T> for BoxWrapper<Unbox<T>>
             where
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
             {
@@ -1127,8 +1126,6 @@ impl<'a> GenerateTypes<'a> {
                 let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types);
                 let boxed = self.spec.check_parent(t, &f.types);
-    
-                
                 let unbox_nowrap = &self
                     .choose_type
                     .choose_type_unbox_nowrap(f.types.as_slice(), Some(&t), &f.name, false, false)
