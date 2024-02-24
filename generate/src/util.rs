@@ -164,6 +164,7 @@ impl<'a> ChooseType<'a> {
         parent: Option<&Type>,
         name: &T,
         optional: bool,
+        no_wrap: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -176,6 +177,7 @@ impl<'a> ChooseType<'a> {
             None::<Box<dyn FnOnce() -> TokenStream>>,
             false,
             false,
+            no_wrap,
         )
     }
 
@@ -198,6 +200,30 @@ impl<'a> ChooseType<'a> {
             None::<Box<dyn FnOnce() -> TokenStream>>,
             true,
             owned,
+            false,
+        )
+    }
+
+    pub(crate) fn choose_type_unbox_nowrap<T>(
+        &self,
+        types: &[String],
+        parent: Option<&Type>,
+        name: &T,
+        optional: bool,
+        owned: bool,
+    ) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        self.choose_type_private(
+            types,
+            parent,
+            name,
+            optional,
+            None::<Box<dyn FnOnce() -> TokenStream>>,
+            true,
+            owned,
+            true,
         )
     }
 
@@ -213,7 +239,16 @@ impl<'a> ChooseType<'a> {
         T: AsRef<str>,
         F: FnOnce() -> TokenStream,
     {
-        self.choose_type_private(types, parent, name, optional, Some(lifetime), false, false)
+        self.choose_type_private(
+            types,
+            parent,
+            name,
+            optional,
+            Some(lifetime),
+            false,
+            false,
+            true,
+        )
     }
 
     /// Generate the type for a specific field, depending if we have an array type,
@@ -228,6 +263,7 @@ impl<'a> ChooseType<'a> {
         lifetime: Option<F>,
         unbox: bool,
         owned: bool,
+        no_wrap: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -236,6 +272,8 @@ impl<'a> ChooseType<'a> {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
         let primative = is_primative(&[type_without_array(&types[0])]) && !owned;
+
+        let json = is_json_types_internal(&[type_without_array(&types[0])]);
         let opts = TypeChooserOpts {
             types,
             is_media,
@@ -316,6 +354,17 @@ impl<'a> ChooseType<'a> {
             t
         };
 
+        let t = if json
+            && nested == 0
+            && !no_wrap
+            && !is_inputfile_types(types)
+            && name.as_ref() != "type"
+        {
+            quote! { BoxWrapper<#t> }
+        } else {
+            t
+        };
+
         Ok(if optional {
             quote! {
                 Option<#t>
@@ -341,6 +390,14 @@ where
 }
 
 pub(crate) fn is_json_types(types: &[String]) -> bool {
+    is_json_types_internal(&types.iter().map(|v| v.as_str()).collect::<Vec<&str>>())
+}
+
+pub(crate) fn should_wrap(types: &[String]) -> bool {
+    is_json_types(types) && is_array(&types[0]) == 0 && !is_inputfile_types(types)
+}
+
+pub(crate) fn is_json_types_internal(types: &[&str]) -> bool {
     for t in types {
         for compare in ["Integer", "Boolean", "Float", "String"] {
             if t.ends_with(compare) && !t.starts_with("Array of") {

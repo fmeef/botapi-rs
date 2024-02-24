@@ -177,7 +177,7 @@ impl<'a> GenerateTypes<'a> {
                 let fieldname = get_type_name_str(&f.name);
                 let choose = self
                     .choose_type
-                    .choose_type(f.types.as_slice(), Some(&t), &f.name, false)
+                    .choose_type(f.types.as_slice(), Some(&t), &f.name, false, true)
                     .unwrap();
                 let name = format_ident!("{}", fieldname);
                 quote! {
@@ -238,86 +238,86 @@ impl<'a> GenerateTypes<'a> {
     fn generate_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
             let fieldnames = self.get_field_names_ext(t);
-            let methods = self
-                .get_common_methods_recursive_ext(t)
-                .iter()
-                .filter_map(|field| {
-                    let comment = field.description.into_comment();
-                    let name = get_field_name(field);
-                    let fieldname = format_ident!("get_{}", name);
-                    let primative = is_primative(&field.types);
+            // let methods = self
+            //     .get_common_methods_recursive_ext(t)
+            //     .iter()
+            //     .filter_map(|field| {
+            //         let comment = field.description.into_comment();
+            //         let name = get_field_name(field);
+            //         let fieldname = format_ident!("get_{}", name);
+            //         let primative = is_primative(&field.types);
 
-                    let unbox = self
-                        .choose_type
-                        .choose_type_unbox(
-                            field.types.as_slice(),
-                            Some(&t),
-                            &field.name,
-                            false,
-                            false,
-                        )
-                        .unwrap();
+            //         let unbox = self
+            //             .choose_type
+            //             .choose_type_unbox(
+            //                 field.types.as_slice(),
+            //                 Some(&t),
+            //                 &field.name,
+            //                 false,
+            //                 false,
+            //             )
+            //             .unwrap();
 
-                    let is_str = is_str_field(field);
-                    let ret = if is_str {
-                        quote! { Cow<'a, str> }
-                    } else if (field.required && primative) || (!field.required && primative) {
-                        unbox
-                    } else {
-                        quote! { Cow<'a, #unbox> }
-                    };
+            //         let is_str = is_str_field(field);
+            //         let ret = if is_str {
+            //             quote! { Cow<'a, str> }
+            //         } else if (field.required && primative) || (!field.required && primative) {
+            //             unbox
+            //         } else {
+            //             quote! { Cow<'a, #unbox> }
+            //         };
 
-                    let ret = quote! { Option<#ret> };
+            //         let ret = quote! { Option<#ret> };
 
-                    let match_arms = t
-                        .pretty_fields()
-                        .filter(|f| f.name != "update_id")
-                        .filter(|f| {
-                            let fieldtype = f.types.first().unwrap();
-                            let fieldtype = self.spec.get_type(fieldtype).unwrap();
-                            self.has_method(fieldtype, field)
-                        })
-                        .map(|f| {
-                            let t = get_type_name_str(&f.name);
-                            let t = format_ident!("{}", t);
-                            quote! {
-                                Self::#t(ref v) => Some(v.#fieldname())
-                            }
-                        })
-                        .collect_vec();
+            //         let match_arms = t
+            //             .pretty_fields()
+            //             .filter(|f| f.name != "update_id")
+            //             .filter(|f| {
+            //                 let fieldtype = f.types.first().unwrap();
+            //                 let fieldtype = self.spec.get_type(fieldtype).unwrap();
+            //                 self.has_method(fieldtype, field)
+            //             })
+            //             .map(|f| {
+            //                 let t = get_type_name_str(&f.name);
+            //                 let t = format_ident!("{}", t);
+            //                 quote! {
+            //                     Self::#t(ref v) => Some(v.#fieldname())
+            //                 }
+            //             })
+            //             .collect_vec();
 
-                    if match_arms.len() == 0 {
-                        None
-                    } else {
-                        let match_arms = match_arms.iter();
-                        let mat = if field.required {
-                            quote! {
-                                match self {
-                                    #( #match_arms , )*
-                                    _ => None
+            //         if match_arms.len() == 0 {
+            //             None
+            //         } else {
+            //             let match_arms = match_arms.iter();
+            //             let mat = if field.required {
+            //                 quote! {
+            //                     match self {
+            //                         #( #match_arms , )*
+            //                         _ => None
 
-                                }
-                            }
-                        } else {
-                            quote! {
-                                match self {
-                                    #( #match_arms , )*
-                                    _ => None
+            //                     }
+            //                 }
+            //             } else {
+            //                 quote! {
+            //                     match self {
+            //                         #( #match_arms , )*
+            //                         _ => None
 
-                                }.flatten()
-                            }
-                        };
+            //                     }.flatten()
+            //                 }
+            //             };
 
-                        let res = quote! {
-                            #comment
-                            pub fn #fieldname<'a>(&'a self) -> #ret  {
-                                #mat
-                            }
-                        };
-                        Some(res)
-                    }
-                })
-                .collect_vec();
+            //             let res = quote! {
+            //                 #comment
+            //                 pub fn #fieldname<'a>(&'a self) -> #ret  {
+            //                     #mat
+            //                 }
+            //             };
+            //             Some(res)
+            //         }
+            //     })
+            //     .collect_vec();
 
             quote! {
                 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
@@ -326,9 +326,9 @@ impl<'a> GenerateTypes<'a> {
                     Invalid
                 }
 
-                impl UpdateExt {
-                    #( #methods )*
-                }
+                // impl UpdateExt {
+                //     #( #methods )*
+                // }
             }
         } else {
             quote!()
@@ -370,7 +370,7 @@ impl<'a> GenerateTypes<'a> {
                     let extname = format_ident!("{}", extname);
                     quote! {
                         if let Some(thing) = update.#name {
-                            return Self::#extname(thing);
+                            return Self::#extname(thing.into_inner());
                         }
                     }
                 });
@@ -451,7 +451,8 @@ impl<'a> GenerateTypes<'a> {
                             let form = data.part(name, Part::bytes(bytes).file_name(""));
                             Ok((form, attach))
                         }
-                        InputFile::String(name) => Ok((data, name)),
+                        InputFile::String(name) => Ok((data, name))
+                        ,
                         _ => Err(anyhow!("cry")),
                    }
                }
@@ -493,7 +494,7 @@ impl<'a> GenerateTypes<'a> {
             let res = if !is_inputfile_types(&types) {
                 if let Some(name) = self.get_multitype_name_return(&types) {
                     let t = self.generate_enum_str(&types, &name)?;
-                    if !is_json_types(types) {
+                    if !is_json_types(&types) {
                         let typeiter = types.iter().map(|t| get_type_name_str(t));
                         let types = generate_fmt_display_enum(&name, typeiter);
                         quote! {
@@ -577,16 +578,26 @@ impl<'a> GenerateTypes<'a> {
                 let name = f.name.to_case(Case::Snake);
                 let name = format_ident!("set_{}", name);
                 let fieldname = get_field_name(f);
+                let boxed = self.spec.check_parent(t, &f.types);
                 let fieldname = format_ident!("{}", fieldname);
-                let fieldinst = if f.required {
-                    quote! { #fieldname }
+
+                let fieldinst = if !should_wrap(&f.types) || f.name == "type" {
+                    fieldname.to_token_stream()
+                } else if boxed {
+                    quote! { BoxWrapper(MaybeBox::Box(#fieldname)) }
                 } else {
-                    quote! { Some(#fieldname) }
+                    quote! { BoxWrapper(MaybeBox::Not(#fieldname)) }
+                };
+
+                let fieldinst = if f.required {
+                    quote! { #fieldinst }
+                } else {
+                    quote! { Some(#fieldinst) }
                 };
 
                 let fieldtype = self
                     .choose_type
-                    .choose_type(&f.types, Some(t), &f.name, false)
+                    .choose_type(&f.types, Some(t), &f.name, false, true)
                     .unwrap();
                 let comment = f.description.into_comment();
                 quote! {
@@ -833,6 +844,66 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
+            #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+            enum MaybeBox<T> {
+                Box(T),
+                Not(T)
+            }
+
+            impl <T> Default for MaybeBox<T> where T: Default {
+                fn default() -> Self {
+                    Self::Not(T::default())
+                }
+            }
+
+            #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
+            pub struct BoxWrapper<T>(MaybeBox<T>);
+
+            impl <'de, T> BoxWrapper<T>
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug          
+             
+            {
+                fn inner_ref<'a>(&'a self) -> &'a T {
+                    match self.0 {
+                        MaybeBox::Box(ref b) => b,
+                        MaybeBox::Not(ref n) => n
+                    }
+                }
+
+                
+                fn into_inner(self) -> T {
+                    match self.0 {
+                        MaybeBox::Box(b) => b,
+                        MaybeBox::Not(n) => n
+                    }
+                }
+            }
+
+            impl <'de, T> std::ops::Deref for BoxWrapper<T>
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            {
+
+                type Target = T;
+                fn deref(&self) -> &Self::Target {
+                    match self.0 {
+                        MaybeBox::Box(ref b) => b,
+                        MaybeBox::Not(ref n) => n,
+                    }
+                }
+            }
+
+
+            // impl <T, U> BoxWrapper<T, U>
+            // where
+            //     T: std::ops::Deref<Target = U>,
+            //     for<'a> U: Serialize + Deserialize<'a> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            // {
+
+            // }
+
+
             impl FileData {
 
                 /*
@@ -916,7 +987,7 @@ impl<'a> GenerateTypes<'a> {
                 .filter(|f| f.required && f.name != "type")
                 .map(|v| {
                     self.choose_type
-                        .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                        .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required, true)
                         .ok()
                 });
             let fieldnames = t
@@ -956,15 +1027,28 @@ impl<'a> GenerateTypes<'a> {
             let fieldnames_i = t
                 .pretty_fields()
                 .filter(|f| f.required && f.name != "type")
-                .map(|f| get_field_name(f))
-                .map(|v| format_ident!("{}", v));
+                .map(|f| {
+                    let v = get_field_name(f);
+                    let boxed = self.spec.check_parent(&t, &f.types);
+                    let v = format_ident!("{}", v);
+                    if !should_wrap(&f.types) {
+                        quote! { #v: #v }
+                    } else if boxed {
+                        quote! { #v: BoxWrapper(MaybeBox::Box(#v)) }
+                    } else {
+                        quote! { #v: BoxWrapper(MaybeBox::Not(#v)) }
+                    }
+                });
 
             let nones = t
                 .pretty_fields()
                 .filter(|f| !f.required && f.name != "type")
-                .map(|f| get_field_name(f))
-                .map(|v| format_ident!("{}", v))
-                .map(|v| quote! { #v: None });
+                .map(|f| {
+                    let v = get_field_name(f);
+
+                    let v = format_ident!("{}", v);
+                    quote! { #v: None }
+                });
 
             let param = match regular_type {
                 Some("String") => quote!(),
@@ -996,8 +1080,8 @@ impl<'a> GenerateTypes<'a> {
             .map(|f| {
                 let comment = f.description.into_comment();
                 let name = get_field_name(f);
-                let fieldname = format_ident!("get_{}", name);
-                let fieldname_ref = format_ident!("get_{}_ref", name);
+                // let fieldname = format_ident!("get_{}", name);
+                let fieldname_ref = format_ident!("get_{}", name);
                 let fieldname_set = format_ident!("set_{}", name);
                 let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types);
@@ -1005,6 +1089,12 @@ impl<'a> GenerateTypes<'a> {
                 let unbox = &self
                     .choose_type
                     .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
+                    .unwrap();
+
+                
+     let unbox_nowrap = &self
+                    .choose_type
+                    .choose_type_unbox_nowrap(f.types.as_slice(), Some(&t), &f.name, false, false)
                     .unwrap();
                 let is_str = is_str_field(f);
 
@@ -1019,38 +1109,62 @@ impl<'a> GenerateTypes<'a> {
                 };
 
                 let assign = if f.required {
-                    quote! {
-                        self.#returnname = #assign;
+                    if ! should_wrap(&f.types) || f.name == "type" {
+                        quote! { self.#returnname = #assign; }
+                    } else if boxed {
+                        quote! {
+                            self.#returnname = BoxWrapper(MaybeBox::Box(#assign));
+                        }
+                    } else {
+                         quote! {
+                            self.#returnname = BoxWrapper(MaybeBox::Not(#assign));
+                        }
                     }
                 } else {
-                    quote! {
-                        self.#returnname = if let Some(#returnname) = #returnname {
+                    let assign = if ! should_wrap(&f.types) || f.name == "type" {
+                        assign
+                    } else if boxed {
+                        quote! { BoxWrapper(MaybeBox::Box(#assign)) }
+                    } else {
+                        quote! { BoxWrapper(MaybeBox::Not(#assign)) }
+                    };
+                    let optionassign = quote! {
+                        if let Some(#returnname) = #returnname {
                             Some(#assign)
                         } else {
-                            None
-                        };
+                             None
+                        }
+                    };
+                       if is_primative(&f.types) {
+                        quote! {
+                            self.#returnname =  #optionassign;
+                        }
+                    } else {
+                        quote! {
+                            self.#returnname = #optionassign;
+                        }
                     }
                 };
 
-                let access = if is_str && f.required {
-                    quote! { Cow::Borrowed(self.#returnname.as_str()) }
-                } else if primative {
-                    quote! { self.#returnname }
-                } else if boxed {
-                    quote! { Cow::Borrowed(self.#returnname.as_ref()) }
-                } else {
-                    quote! { Cow::Borrowed(&self.#returnname) }
-                };
+                // let access = if is_str && f.required {
+                //     quote! { Cow::Borrowed(self.#returnname.as_str()) }
+                // } else if primative {
+                //     quote! { self.#returnname }
+                // } else if boxed {
+                //     quote! { Cow::Borrowed(self.#returnname.as_ref()) }
+                // } else {
+                //     quote! { Cow::Borrowed(&self.#returnname) }
+                // };
 
-                let vaccess = if is_str {
-                    quote! { Cow::Borrowed(v.as_str()) }
-                } else if boxed {
-                    quote! { Cow::Borrowed(v.as_ref()) }
-                } else if primative {
-                    quote! { *v }
-                } else {
-                    quote! { Cow::Borrowed(v) }
-                };
+                // let vaccess = if is_str {
+                //     quote! { Cow::Borrowed(v.as_str()) }
+                // } else if boxed {
+                //     quote! { Cow::Borrowed(v.as_ref()) }
+                // } else if primative {
+                //     quote! { *v }
+                // } else {
+                //     quote! { Cow::Borrowed(v) }
+                // };
 
                 let refaccess = if is_str && f.required {
                     quote! { self.#returnname.as_str() }
@@ -1064,35 +1178,37 @@ impl<'a> GenerateTypes<'a> {
 
                 let refvaccess = if is_str {
                     quote! { v.as_str() }
-                } else if boxed {
-                    quote! { v.as_ref() }
+                } else if should_wrap(&f.types) && boxed {
+                    quote! { v.inner_ref().as_ref() }
+                }else if should_wrap(&f.types) {
+                    quote! { v.inner_ref() }
                 } else if primative {
                     quote! { *v }
                 } else {
                     quote! { v }
                 };
 
-                let ret = if is_str {
-                    quote! { Cow<'a, str> }
-                } else if (f.required && primative) || (!f.required && primative) {
-                    unbox.to_owned()
-                } else {
-                    quote! { Cow<'a, #unbox> }
-                };
+                // let ret = if is_str {
+                //     quote! { Cow<'a, str> }
+                // } else if (f.required && primative) || (!f.required && primative) {
+                //     unbox.to_owned()
+                // } else {
+                //     quote! { Cow<'a, #unbox> }
+                // };
 
                 let refret = if is_str {
                     quote! { &'a str }
                 } else if (f.required && primative) || (!f.required && primative) {
-                    unbox.to_owned()
+                    unbox_nowrap.to_owned()
                 } else {
-                    quote! { &'a #unbox }
+                    quote! { &'a #unbox_nowrap }
                 };
 
-                let ret = if f.required {
-                    ret
-                } else {
-                    quote! { Option<#ret> }
-                };
+                // let ret = if f.required {
+                //     ret
+                // } else {
+                //     quote! { Option<#ret> }
+                // };
 
                 let refret = if f.required {
                     refret
@@ -1109,17 +1225,17 @@ impl<'a> GenerateTypes<'a> {
                 };
 
                 let setname = if f.required {
-                    quote!{ #unbox }
+                    quote!{ #unbox_nowrap }
                 } else {
-                    quote! { Option<#unbox> }
+                    quote! { Option<#unbox_nowrap> }
                 };
 
                 if f.required {
                     quote! {
-                        #comment
-                        #public fn #fieldname<'a>(&'a self) -> #ret  {
-                            #access
-                        }
+                        // #comment
+                        // #public fn #fieldname<'a>(&'a self) -> #ret  {
+                        //     #access
+                        // }
 
                         #comment
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret  {
@@ -1134,12 +1250,12 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     quote! {
-                        #comment
-                        #public fn #fieldname<'a>(&'a self) -> #ret {
-                            self.#returnname.as_ref().map(|v| {
-                                #vaccess
-                            })
-                        }
+                        // #comment
+                        // #public fn #fieldname<'a>(&'a self) -> #ret {
+                        //     self.#returnname.as_ref().map(|v| {
+                        //         #vaccess
+                        //     })
+                        // }
 
                         #comment
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret {
@@ -1158,10 +1274,10 @@ impl<'a> GenerateTypes<'a> {
             })
             .collect_vec();
 
-        let into_tuple = self.generate_into_tuple(t, false, public);
+        // let into_tuple = self.generate_into_tuple(t, false, public);
         quote! {
 
-            #into_tuple
+            // #into_tuple
 
             #( #methods )*
         }
@@ -1170,8 +1286,8 @@ impl<'a> GenerateTypes<'a> {
     fn generate_into_tuple(&self, t: &Type, is_trait: bool, public: bool) -> TokenStream {
         let tuple_create = t.pretty_fields().map(|f| {
             let fieldname = get_field_name(f);
-            let fieldname = format_ident!("{}", fieldname);
             let boxed = self.spec.check_parent(t, &f.types);
+            let fieldname = format_ident!("{}", fieldname);
 
             let name = if boxed {
                 quote! { (* #fieldname) }
@@ -1179,10 +1295,10 @@ impl<'a> GenerateTypes<'a> {
                 quote! { #fieldname }
             };
 
-            let selfname = if boxed {
-                quote! { (*self. #fieldname) }
+            let selfname = if ! should_wrap(&f.types) {
+                quote! { self.#fieldname }
             } else {
-                quote! { self. #fieldname }
+                quote! { (*self. #fieldname) }
             };
 
             if f.required {
@@ -1306,63 +1422,65 @@ impl<'a> GenerateTypes<'a> {
             return quote!();
         }
         if let Some(subtypes) = t.subtypes.as_ref() {
-            let methods = self
-                .get_common_methods(t)
-                .iter()
-                .map(|f| {
-                    let comment = f.description.into_comment();
-                    let name = get_field_name(f);
-                    let fieldname = format_ident!("get_{}", name);
-                    let primative = is_primative(&f.types);
+            // let methods = self
+            //     .get_common_methods(t)
+            //     .iter()
+            //     .map(|f| {
+            //         let comment = f.description.into_comment();
+            //         let name = get_field_name(f);
+            //         let fieldname = format_ident!("get_{}", name);
+            //         let primative = is_primative(&f.types);
 
-                    let unbox = self
-                        .choose_type
-                        .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
-                        .unwrap();
+            //         let unbox = self
+            //             .choose_type
+            //             .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
+            //             .unwrap();
 
-                    let is_str = is_str_field(f);
-                    let ret = if is_str {
-                        quote! { Cow<'a, str> }
-                    } else if (f.required && primative) || (!f.required && primative) {
-                        unbox
-                    } else {
-                        quote! { Cow<'a, #unbox> }
-                    };
+            //         let is_str = is_str_field(f);
+            //         let ret = if is_str {
+            //             quote! { Cow<'a, str> }
+            //         } else if (f.required && primative) || (!f.required && primative) {
+            //             unbox
+            //         } else {
+            //             quote! { Cow<'a, #unbox> }
+            //         };
 
-                    let ret = if f.required {
-                        ret
-                    } else {
-                        quote! { Option<#ret> }
-                    };
+            //         let ret = if f.required {
+            //             ret
+            //         } else {
+            //             quote! { Option<#ret> }
+            //         };
 
-                    let match_arms = subtypes
-                        .iter()
-                        .map(|t| get_type_name_str(t))
-                        .map(|t| format_ident!("{}", t))
-                        .map(|t| {
-                            quote! {
-                                Self::#t(ref v) => v.#fieldname()
-                            }
-                        });
+            //         let match_arms = subtypes
+            //             .iter()
+            //             .map(|t| get_type_name_str(t))
+            //             .map(|t| format_ident!("{}", t))
+            //             .map(|t| {
+            //                 quote! {
+            //                     Self::#t(ref v) => v.#fieldname()
+            //                 }
+            //             });
 
-                    let mat = quote! {
-                        match self {
-                            #( #match_arms ),*
-                        }
-                    };
+            //         let mat = quote! {
+            //             match self {
+            //                 #( #match_arms ),*
+            //             }
+            //         };
 
-                    quote! {
-                        #comment
-                        pub fn #fieldname<'a>(&'a self) -> #ret  {
-                            #mat
-                        }
-                    }
-                })
-                .collect_vec();
+            //         quote! {
+            //             #comment
+            //             pub fn #fieldname<'a>(&'a self) -> #ret  {
+            //                 #mat
+            //             }
+            //         }
+            //     })
+            //     .collect_vec();
 
-            quote! {
-                #( #methods )*
-            }
+            // quote! {
+            //     #( #methods )*
+            // }
+
+            quote!()
         } else {
             quote!()
         }
@@ -1420,9 +1538,9 @@ impl<'a> GenerateTypes<'a> {
             .map(|f| {
                 let comment = f.description.into_comment();
                 let name = get_field_name(f);
-                let fieldname = format_ident!("get_{}", name);
+                // let fieldname = format_ident!("get_{}", name);
                 let fieldname_set = format_ident!("set_{}", name);
-                let fieldname_ref = format_ident!("get_{}_ref", name);
+                let fieldname_ref = format_ident!("get_{}", name);
 
                 let returnname = format_ident!("{}", name);                
                 let primative = is_primative(&f.types);
@@ -1431,29 +1549,34 @@ impl<'a> GenerateTypes<'a> {
                     .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
                     .unwrap();
 
+                let unbox_nowrap = self
+                    .choose_type
+                    .choose_type_unbox_nowrap(f.types.as_slice(), Some(&t), &f.name, false, false)
+                    .unwrap();
+
                 let is_str = is_str_field(f);
 
-                let ret = if is_str {
-                    quote! { Cow<'a, str> }
-                } else if (f.required && primative) || (!f.required && primative) {
-                    unbox.clone()
-                } else {
-                    quote! { Cow<'a, #unbox> }
-                };
+                // let ret = if is_str {
+                //     quote! { Cow<'a, str> }
+                // } else if (f.required && primative) || (!f.required && primative) {
+                //     unbox.clone()
+                // } else {
+                //     quote! { Cow<'a, #unbox> }
+                // };
 
                 let refret = if is_str {
                     quote! { &'a str }
                 } else if (f.required && primative) || (!f.required && primative) {
-                    unbox.clone()
+                    unbox_nowrap.clone()
                 } else {
-                    quote! { &#unbox }
+                    quote! { &#unbox_nowrap }
                 };
 
-                let ret = if f.required {
-                    ret
-                } else {
-                    quote! { Option<#ret> }
-                };
+                // let ret = if f.required {
+                //     ret
+                // } else {
+                //     quote! { Option<#ret> }
+                // };
 
                 let refret = if f.required {
                     refret
@@ -1462,15 +1585,15 @@ impl<'a> GenerateTypes<'a> {
                 };
 
                 let setname = if f.required {
-                    quote!{ #unbox }
+                    quote!{ #unbox_nowrap }
                 } else {
-                    quote! { Option<#unbox> }
+                    quote! { Option<#unbox_nowrap> }
                 };
 
                 if f.required {
                     quote! {
-                        #comment
-                        fn #fieldname<'a>(&'a self) -> #ret;
+                        // #comment
+                        // fn #fieldname<'a>(&'a self) -> #ret;
 
                         #comment
                         fn #fieldname_ref<'a>(&'a self) -> #refret;
@@ -1480,8 +1603,8 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     quote! {
-                        #comment
-                        fn #fieldname<'a>(&'a self) -> #ret;
+                        // #comment
+                        // fn #fieldname<'a>(&'a self) -> #ret;
 
                         #comment
                         fn #fieldname_ref<'a>(&'a self) -> #refret;
@@ -1496,7 +1619,7 @@ impl<'a> GenerateTypes<'a> {
 
         let res = quote! {
             trait #typename #supertraits {
-                #into_tuple
+                // #into_tuple
                 #( #methods )*
             }
         };
@@ -1589,7 +1712,7 @@ impl<'a> GenerateTypes<'a> {
         });
         let fieldtypes = t.pretty_fields().map(|v| {
             self.choose_type
-                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required)
+                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required, false)
                 .ok()
         });
 

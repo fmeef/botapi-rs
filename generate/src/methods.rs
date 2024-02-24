@@ -124,6 +124,7 @@ impl<'a> GenerateMethods<'a> {
             None,
             &"",
             false,
+            true,
         )?;
         let name = get_method_name(method);
         let name = format_ident!("{}", name);
@@ -607,6 +608,7 @@ impl<'a> GenerateMethods<'a> {
             None,
             &"",
             false,
+            true,
         )?;
 
         let (typenames, types) = self.method_params(method, true);
