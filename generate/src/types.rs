@@ -370,7 +370,7 @@ impl<'a> GenerateTypes<'a> {
                     let extname = format_ident!("{}", extname);
                     quote! {
                         if let Some(thing) = update.#name {
-                            return Self::#extname(thing.into_inner());
+                            return Self::#extname(thing.consume());
                         }
                     }
                 });
@@ -700,6 +700,7 @@ impl<'a> GenerateTypes<'a> {
         name: &str,
         tag: &str,
     ) -> Result<TokenStream> {
+       let e = if types.len() > 0 {
         let names_iter = types
             .values()
             .map(|v| get_type_name_str(v))
@@ -739,7 +740,7 @@ impl<'a> GenerateTypes<'a> {
 
         //let enum_methods = self.generate_enum_methods()
 
-        let e = quote! {
+         quote! {
             #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             #[serde(tag = #tag)]
             pub enum #name {
@@ -749,6 +750,12 @@ impl<'a> GenerateTypes<'a> {
                 ),*
             }
             #default
+        }
+        } else {
+            quote! { 
+                #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+                pub struct #name();
+             }   
         };
         Ok(e)
     }
@@ -759,6 +766,9 @@ impl<'a> GenerateTypes<'a> {
         N: AsRef<str>,
         I: AsRef<str>,
     {
+
+        let name = format_ident!("{}", name.as_ref());
+       let e =  if types.len() > 0 {
         let names_iter = types
             .iter()
             .map(|v| get_type_name_str(v))
@@ -781,8 +791,7 @@ impl<'a> GenerateTypes<'a> {
             .map(|v| format_ident!("{}", v))
             .next();
 
-        let name = format_ident!("{}", name.as_ref());
-        let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+             let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
             quote! {
                 impl Default for #name {
                       fn default() -> Self {
@@ -796,7 +805,7 @@ impl<'a> GenerateTypes<'a> {
 
         //let enum_methods = self.generate_enum_methods()
 
-        let e = quote! {
+        quote! {
             #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             #[serde(untagged)]
             pub enum #name {
@@ -805,6 +814,12 @@ impl<'a> GenerateTypes<'a> {
                 ),*
             }
             #default
+        }
+        } else {
+            quote! {
+                 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+                pub struct #name();
+            }  
         };
         Ok(e)
     }
@@ -860,7 +875,7 @@ impl<'a> GenerateTypes<'a> {
                 }
 
                 
-                fn into_inner(self) -> T {
+                fn consume(self) -> T {
                     *self.0                
                 }
             }
@@ -875,7 +890,7 @@ impl<'a> GenerateTypes<'a> {
                 }
 
                 
-                fn into_inner(self) -> T {
+                fn consume(self) -> T {
                     self.0.0                
                 }
             }
