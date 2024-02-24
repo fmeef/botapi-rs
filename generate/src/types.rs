@@ -584,9 +584,9 @@ impl<'a> GenerateTypes<'a> {
                 let fieldinst = if !should_wrap(&f.types) || f.name == "type" {
                     fieldname.to_token_stream()
                 } else if boxed {
-                    quote! { BoxWrapper(MaybeBox::Box(#fieldname)) }
+                    quote! { BoxWrapper(#fieldname) }
                 } else {
-                    quote! { BoxWrapper(MaybeBox::Not(#fieldname)) }
+                    quote! { BoxWrapper(#fieldname) }
                 };
 
                 let fieldinst = if f.required {
@@ -844,20 +844,8 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
-            #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-            enum MaybeBox<T> {
-                Box(T),
-                Not(T)
-            }
-
-            impl <T> Default for MaybeBox<T> where T: Default {
-                fn default() -> Self {
-                    Self::Not(T::default())
-                }
-            }
-
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
-            pub struct BoxWrapper<T>(MaybeBox<T>);
+            pub struct BoxWrapper<T>(T);
 
             impl <'de, T> BoxWrapper<T>
             where
@@ -865,18 +853,12 @@ impl<'a> GenerateTypes<'a> {
              
             {
                 fn inner_ref<'a>(&'a self) -> &'a T {
-                    match self.0 {
-                        MaybeBox::Box(ref b) => b,
-                        MaybeBox::Not(ref n) => n
-                    }
+                    &self.0                
                 }
 
                 
                 fn into_inner(self) -> T {
-                    match self.0 {
-                        MaybeBox::Box(b) => b,
-                        MaybeBox::Not(n) => n
-                    }
+                    self.0                
                 }
             }
 
@@ -887,10 +869,7 @@ impl<'a> GenerateTypes<'a> {
 
                 type Target = T;
                 fn deref(&self) -> &Self::Target {
-                    match self.0 {
-                        MaybeBox::Box(ref b) => b,
-                        MaybeBox::Not(ref n) => n,
-                    }
+                    &self.0            
                 }
             }
 
@@ -1034,9 +1013,9 @@ impl<'a> GenerateTypes<'a> {
                     if !should_wrap(&f.types) {
                         quote! { #v: #v }
                     } else if boxed {
-                        quote! { #v: BoxWrapper(MaybeBox::Box(#v)) }
+                        quote! { #v: BoxWrapper(#v) }
                     } else {
-                        quote! { #v: BoxWrapper(MaybeBox::Not(#v)) }
+                        quote! { #v: BoxWrapper(#v) }
                     }
                 });
 
@@ -1113,20 +1092,20 @@ impl<'a> GenerateTypes<'a> {
                         quote! { self.#returnname = #assign; }
                     } else if boxed {
                         quote! {
-                            self.#returnname = BoxWrapper(MaybeBox::Box(#assign));
+                            self.#returnname = BoxWrapper(#assign);
                         }
                     } else {
                          quote! {
-                            self.#returnname = BoxWrapper(MaybeBox::Not(#assign));
+                            self.#returnname = BoxWrapper(#assign);
                         }
                     }
                 } else {
                     let assign = if ! should_wrap(&f.types) || f.name == "type" {
                         assign
                     } else if boxed {
-                        quote! { BoxWrapper(MaybeBox::Box(#assign)) }
+                        quote! { BoxWrapper(#assign) }
                     } else {
-                        quote! { BoxWrapper(MaybeBox::Not(#assign)) }
+                        quote! { BoxWrapper(#assign) }
                     };
                     let optionassign = quote! {
                         if let Some(#returnname) = #returnname {
