@@ -409,6 +409,21 @@ impl<'a> GenerateTypes<'a> {
         });
 
         quote! {
+
+           impl From<BoxWrapper<Unbox<#name>>> for #name {
+               fn from(t: BoxWrapper<Unbox<#name>>) -> Self {
+                   t.consume()
+               }
+           }
+
+
+           impl From<BoxWrapper<Box<#name>>> for #name {
+               fn from(t: BoxWrapper<Box<#name>>) -> Self {
+                   t.consume()
+               }
+           }
+
+
            impl From<#skipname> for #name {
                fn from(t: #skipname) -> Self {
                     Self {
@@ -858,9 +873,12 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
+            /// Generic wrapper around a type on the stack, without a Box\<T\>
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
             pub struct Unbox<T>(T);
 
+
+            /// Abstraction over Box\<T\> and Unbox\<T\>, essentially a smart pointer to data either on stack or heap
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
             pub struct BoxWrapper<T>(T);
 
@@ -869,13 +887,20 @@ impl<'a> GenerateTypes<'a> {
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
 
             {
+
+                /// Return a reference to the value contained within this type
                 pub fn inner_ref<'a>(&'a self) -> &'a T {
                     &self.0
                 }
 
-
+                /// Consume this type and return the contained value
                 pub fn consume(self) -> T {
                     *self.0
+                }
+
+                /// Constructs a new BoxWrapper from a value
+                pub fn new_box(value: T) -> Self {
+                    Self(Box::new(value))
                 }
             }
 
@@ -884,13 +909,19 @@ impl<'a> GenerateTypes<'a> {
                 T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
 
             {
+                /// Return a reference to the value contained within this type
                 pub fn inner_ref<'a>(&'a self) -> &'a T {
                     &self.0.0
                 }
 
-
+               /// Consume this type and return the contained value
                 pub fn consume(self) -> T {
                     self.0.0
+                }
+
+                /// Constructs a new BoxWrapper from a value
+                pub fn new_unbox(value: T) -> Self {
+                    Self(Unbox(value))
                 }
             }
 
@@ -934,6 +965,35 @@ impl<'a> GenerateTypes<'a> {
                     &self.0.0
                 }
             }
+
+            impl <'de, T> From<T> for BoxWrapper<Unbox<T>>
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            {
+                fn from(value: T) -> Self {
+                    Self::new_unbox(value)
+                }
+            }
+
+
+            impl <'de, T> From<T> for BoxWrapper<Box<T>>
+            where
+                T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            {
+                fn from(value: T) -> Self {
+                    Self::new_box(value)
+                }
+            }
+
+
+           // impl <'de, T> Into<T> for BoxWrapper<Unbox<T>>
+           //  where
+           //      T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+           //  {
+           //      fn into(self) -> T {
+           //          self.consume()
+           //      }
+           //  }
 
             // impl <T, U> BoxWrapper<T, U>
             // where
@@ -1710,6 +1770,12 @@ impl<'a> GenerateTypes<'a> {
                 use super::*;
                 use std::default::Default;
                 #( #tests )*
+
+                #[test]
+                fn new_unbox() {
+                    let v: BoxWrapper<Unbox<Message>> = BoxWrapper::new_unbox(Message::default());
+                    let _: Message = v.into();
+                }
             }
         }
     }
@@ -1728,14 +1794,17 @@ impl<'a> GenerateTypes<'a> {
             let v = &f.name;
             let fieldname = get_field_name(f);
             let name = format_ident!("{}", fieldname);
+            let comment = f.description.into_comment();
             if f.required {
                 quote! {
+                    #comment
                     #[serde(rename = #v)]
-                    #name
+                    pub #name
                 }
             } else {
                 if serde_skip {
                     quote! {
+                        #comment
                         #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
                         pub #name
                     }
