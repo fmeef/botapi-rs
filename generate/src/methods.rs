@@ -210,10 +210,16 @@ impl<'a> GenerateMethods<'a> {
                 fieldtype
             };
 
-            let some = if f.required {
-                quote! { #fieldname.into() }
+            let fieldname_into = if should_wrap(&f.types) {
+                quote! { #fieldname .into() }
             } else {
-                quote! { Some(#fieldname.into()) }
+                fieldname.clone()
+            };
+
+            let some = if f.required {
+                quote! { #fieldname_into }
+            } else {
+                quote! { Some(#fieldname_into) }
             };
 
             let get_some = if f.required {
@@ -221,15 +227,29 @@ impl<'a> GenerateMethods<'a> {
             } else {
                 quote! { Option<#fieldtype> }
             };
-
-            quote! {
-                #comment
-                pub fn #fieldname<T>(mut self, #fieldname: T) -> Self
-                    where T: Into<#fieldtype>
-                {
-                    self.#fieldname = #some;
-                    self
+            let setter = if should_wrap(&f.types) {
+                quote! {
+                    #comment
+                    pub fn #fieldname<T>(mut self, #fieldname: T) -> Self
+                        where T: Into<#fieldtype>
+                    {
+                        self.#fieldname = #some;
+                        self
+                    }
                 }
+            } else {
+                quote! {
+                    #comment
+                    pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self
+                    {
+                        self.#fieldname = #some;
+                        self
+                    }
+                }
+            };
+            quote! {
+                #setter
+
 
                 pub fn #getter(&'a self) -> &'a #get_some {
                     &self.#fieldname
