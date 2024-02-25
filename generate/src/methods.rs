@@ -81,7 +81,8 @@ impl<'a> GenerateMethods<'a> {
         &self,
         method: &Method,
         generic: bool,
-    ) -> (Vec<TokenStream>, Vec<TokenStream>) {
+    ) -> (Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>) {
+        let mut g = 'A';
         let typenames = method
             .fields
             .as_deref()
@@ -90,14 +91,14 @@ impl<'a> GenerateMethods<'a> {
             .filter(|m| m.required)
             .map(|f| get_field_name(f))
             .map(|f| format_ident!("{}", f).to_token_stream());
-        let types = method
+        let (types, generics): (Vec<Option<TokenStream>>, Vec<TokenStream>) = method
             .fields
             .as_deref()
             .unwrap_or_default()
             .iter()
             .filter(|m| m.required)
             .map(|f| {
-                if is_inputfile(&f) {
+                let v = if is_inputfile(&f) {
                     let q = quote! { FileData };
                     is_optional(f, q).to_token_stream()
                 } else if is_str_field(f) {
@@ -111,10 +112,26 @@ impl<'a> GenerateMethods<'a> {
                         .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a })
                         .unwrap()
                         .to_token_stream()
+                };
+                if should_wrap(&f.types) {
+                    let generic = format_ident!("{}", g);
+                    g = (g as u8 + 1) as char;
+                    let gen = quote! {
+                        #generic: Into<#v>
+                    };
+                    let generic = quote! { #generic };
+                    (Some(gen), generic)
+                } else {
+                    (None, v)
                 }
-            });
+            })
+            .unzip();
 
-        (typenames.collect(), types.collect())
+        (
+            typenames.collect(),
+            types.into_iter().filter_map(|v| v).collect(),
+            generics,
+        )
     }
 
     fn generate_call(&self, method: &Method) -> Result<TokenStream> {
@@ -194,9 +211,9 @@ impl<'a> GenerateMethods<'a> {
             };
 
             let some = if f.required {
-                quote! { #fieldname }
+                quote! { #fieldname.into() }
             } else {
-                quote! { Some(#fieldname) }
+                quote! { Some(#fieldname.into()) }
             };
 
             let get_some = if f.required {
@@ -207,7 +224,9 @@ impl<'a> GenerateMethods<'a> {
 
             quote! {
                 #comment
-                pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self {
+                pub fn #fieldname<T>(mut self, #fieldname: T) -> Self
+                    where T: Into<#fieldtype>
+                {
                     self.#fieldname = #some;
                     self
                 }
@@ -653,7 +672,7 @@ impl<'a> GenerateMethods<'a> {
         let returntype = get_type_name_str(&method.name);
         let returntype = format_ident!("Call{}", returntype);
 
-        let (typenames, types) = self.method_params_req(method, true);
+        let (typenames, types, generics) = self.method_params_req(method, true);
 
         let nones = method.fields.as_ref().map_or_else(
             || Vec::new(),
@@ -683,13 +702,15 @@ impl<'a> GenerateMethods<'a> {
             quote! { , V }
         };
 
+        let types = types.iter().map(|v| quote! { #v });
+
         let comment = method.description.concat().into_comment();
         let res = quote! {
             #comment
-            pub fn #fn_name <'a #generic> (&'a self, #( #typenames: #types ),*) -> #returntype<'a #generic> {
+            pub fn #fn_name <'a #generic,  #( #types ),*> (&'a self, #( #typenames: #generics ),*) -> #returntype<'a #generic> {
                 #returntype {
                     bot: self,
-                    #( #typenames , )*
+                    #( #typenames: #typenames .into() , )*
                     #( #nones ),*
                 }
             }

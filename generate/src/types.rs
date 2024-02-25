@@ -1082,14 +1082,25 @@ impl<'a> GenerateTypes<'a> {
         if t.fields.as_ref().map_or(0, |f| f.len()) == 0 {
             Ok(quote!())
         } else {
-            let fieldtypes = t
+            let mut generic = 'A';
+            let (fieldtypes, generics): (Vec<Option<TokenStream>>, Vec<TokenStream>) = t
                 .pretty_fields()
                 .filter(|f| f.required && f.name != "type")
                 .map(|v| {
-                    self.choose_type
+                    let t = self
+                        .choose_type
                         .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required, true)
-                        .ok()
-                });
+                        .unwrap();
+                    if should_wrap(&v.types) {
+                        let g = format_ident!("{}", generic).to_token_stream();
+                        generic = (generic as u8 + 1) as char;
+                        let t = quote! { #g: Into<#t> };
+                        (Some(t), g)
+                    } else {
+                        (None, t)
+                    }
+                })
+                .unzip();
             let fieldnames = t
                 .pretty_fields()
                 .filter(|f| f.required && f.name != "type")
@@ -1132,11 +1143,11 @@ impl<'a> GenerateTypes<'a> {
                     let boxed = self.spec.check_parent(&t, &f.types);
                     let v = format_ident!("{}", v);
                     if !should_wrap(&f.types) {
-                        quote! { #v: #v }
+                        quote! { #v: #v.into() }
                     } else if boxed {
-                        quote! { #v: BoxWrapper(#v) }
+                        quote! { #v: BoxWrapper(#v.into()) }
                     } else {
-                        quote! { #v: BoxWrapper(Unbox(#v)) }
+                        quote! { #v: BoxWrapper::new_unbox(#v.into()) }
                     }
                 });
 
@@ -1160,8 +1171,15 @@ impl<'a> GenerateTypes<'a> {
                 }
                 _ => quote!(),
             };
+            let fieldtypes = fieldtypes.into_iter().filter_map(|v| v).collect_vec();
+            let g = if fieldtypes.len() > 0 {
+                quote! {  <#( #fieldtypes ),*> }
+            } else {
+                quote!()
+            };
+
             let res = quote! {
-                pub fn new( #( #fieldnames: #fieldtypes ),*  #param ) -> Self {
+                pub fn new #g ( #( #fieldnames: #generics ),*  #param ) -> Self {
                     Self {
                         #tgtype
                         #( #fieldnames_i, )*
