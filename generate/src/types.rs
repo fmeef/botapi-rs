@@ -9,7 +9,7 @@ use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
 use regex::{escape, Regex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 lazy_static! {
@@ -117,13 +117,13 @@ impl<'a> GenerateTypes<'a> {
                         self.generate_enum_str(subtypes.as_slice(), &v.name)
                             .unwrap()
                     };
-                    // let name = format_ident!("{}", v.name);
-                    // let methods = self.generate_enum_methods(v);
+                    let name = format_ident!("{}", v.name);
+                    let methods = self.generate_enum_methods(v);
                     quote! {
                         #e
-                        // impl #name {
-                            // #methods
-                        // }
+                        impl #name {
+                            #methods
+                        }
                     }
                 }
             }
@@ -186,14 +186,14 @@ impl<'a> GenerateTypes<'a> {
             })
     }
 
-    // fn has_method(&self, t: &Type, field: &Field) -> bool {
-    //     let common_methods = self.get_common_methods(t);
-    //     if let Some(fields) = t.fields.as_ref() {
-    //         fields.contains(field) || common_methods.contains(field)
-    //     } else {
-    //         common_methods.contains(field)
-    //     }
-    // }
+    fn has_method(&self, t: &Type, field: &Field) -> bool {
+        let common_methods = self.get_common_methods(t);
+        if let Some(fields) = t.fields.as_ref() {
+            fields.contains(field) || common_methods.contains(field)
+        } else {
+            common_methods.contains(field)
+        }
+    }
 
     /// Generates enum for special type that is either a chat id or chat username
     fn generate_chat_enum(&self) -> TokenStream {
@@ -238,86 +238,86 @@ impl<'a> GenerateTypes<'a> {
     fn generate_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
             let fieldnames = self.get_field_names_ext(t);
-            // let methods = self
-            //     .get_common_methods_recursive_ext(t)
-            //     .iter()
-            //     .filter_map(|field| {
-            //         let comment = field.description.into_comment();
-            //         let name = get_field_name(field);
-            //         let fieldname = format_ident!("get_{}", name);
-            //         let primative = is_primative(&field.types);
+            let methods = self
+                .get_common_methods_recursive_ext(t)
+                .iter()
+                .filter_map(|field| {
+                    let comment = field.description.into_comment();
+                    let name = get_field_name(field);
+                    let fieldname = format_ident!("get_{}", name);
+                    let primative = is_primative(&field.types);
 
-            //         let unbox = self
-            //             .choose_type
-            //             .choose_type_unbox(
-            //                 field.types.as_slice(),
-            //                 Some(&t),
-            //                 &field.name,
-            //                 false,
-            //                 false,
-            //             )
-            //             .unwrap();
+                    let unbox = self
+                        .choose_type
+                        .choose_type_unbox(
+                            field.types.as_slice(),
+                            Some(&t),
+                            &field.name,
+                            false,
+                            false,
+                        )
+                        .unwrap();
 
-            //         let is_str = is_str_field(field);
-            //         let ret = if is_str {
-            //             quote! { Cow<'a, str> }
-            //         } else if (field.required && primative) || (!field.required && primative) {
-            //             unbox
-            //         } else {
-            //             quote! { Cow<'a, #unbox> }
-            //         };
+                    let is_str = is_str_field(field);
+                    let ret = if is_str {
+                        quote! { &'a str }
+                    } else if (field.required && primative) || (!field.required && primative) {
+                        unbox
+                    } else {
+                        quote! { &'a #unbox }
+                    };
 
-            //         let ret = quote! { Option<#ret> };
+                    let ret = quote! { Option<#ret> };
 
-            //         let match_arms = t
-            //             .pretty_fields()
-            //             .filter(|f| f.name != "update_id")
-            //             .filter(|f| {
-            //                 let fieldtype = f.types.first().unwrap();
-            //                 let fieldtype = self.spec.get_type(fieldtype).unwrap();
-            //                 self.has_method(fieldtype, field)
-            //             })
-            //             .map(|f| {
-            //                 let t = get_type_name_str(&f.name);
-            //                 let t = format_ident!("{}", t);
-            //                 quote! {
-            //                     Self::#t(ref v) => Some(v.#fieldname())
-            //                 }
-            //             })
-            //             .collect_vec();
+                    let match_arms = t
+                        .pretty_fields()
+                        .filter(|f| f.name != "update_id")
+                        .filter(|f| {
+                            let fieldtype = f.types.first().unwrap();
+                            let fieldtype = self.spec.get_type(fieldtype).unwrap();
+                            self.has_method(fieldtype, field)
+                        })
+                        .map(|f| {
+                            let t = get_type_name_str(&f.name);
+                            let t = format_ident!("{}", t);
+                            quote! {
+                                Self::#t(ref v) => Some(v.#fieldname())
+                            }
+                        })
+                        .collect_vec();
 
-            //         if match_arms.len() == 0 {
-            //             None
-            //         } else {
-            //             let match_arms = match_arms.iter();
-            //             let mat = if field.required {
-            //                 quote! {
-            //                     match self {
-            //                         #( #match_arms , )*
-            //                         _ => None
+                    if match_arms.len() == 0 {
+                        None
+                    } else {
+                        let match_arms = match_arms.iter();
+                        let mat = if field.required {
+                            quote! {
+                                match self {
+                                    #( #match_arms , )*
+                                    _ => None
 
-            //                     }
-            //                 }
-            //             } else {
-            //                 quote! {
-            //                     match self {
-            //                         #( #match_arms , )*
-            //                         _ => None
+                                }
+                            }
+                        } else {
+                            quote! {
+                                match self {
+                                    #( #match_arms , )*
+                                    _ => None
 
-            //                     }.flatten()
-            //                 }
-            //             };
+                                }.flatten()
+                            }
+                        };
 
-            //             let res = quote! {
-            //                 #comment
-            //                 pub fn #fieldname<'a>(&'a self) -> #ret  {
-            //                     #mat
-            //                 }
-            //             };
-            //             Some(res)
-            //         }
-            //     })
-            //     .collect_vec();
+                        let res = quote! {
+                            #comment
+                            pub fn #fieldname<'a>(&'a self) -> #ret  {
+                                #mat
+                            }
+                        };
+                        Some(res)
+                    }
+                })
+                .collect_vec();
 
             quote! {
                 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
@@ -326,9 +326,9 @@ impl<'a> GenerateTypes<'a> {
                     Invalid
                 }
 
-                // impl UpdateExt {
-                //     #( #methods )*
-                // }
+                impl UpdateExt {
+                    #( #methods )*
+                }
             }
         } else {
             quote!()
@@ -1476,127 +1476,125 @@ impl<'a> GenerateTypes<'a> {
     //     }
     // }
 
-    // pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-    //     let mut set = HashSet::<&Field>::new();
+    pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
+        let mut set = HashSet::<&Field>::new();
 
-    //     for field in t.pretty_fields() {
-    //         let mt = field.types.first().unwrap();
-    //         if is_json(field) && is_array(mt) == 0 {
-    //             let t = self
-    //                 .spec
-    //                 .get_type(mt)
-    //                 .expect(&format!("invalid type {}", mt));
-    //             let hashset = self.get_common_methods_recursive(&t);
-    //             set = set.union(&hashset).cloned().collect();
-    //         }
-    //     }
-    //     set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
-    // }
+        for field in t.pretty_fields() {
+            let mt = field.types.first().unwrap();
+            if is_json(field) && is_array(mt) == 0 {
+                let t = self
+                    .spec
+                    .get_type(mt)
+                    .expect(&format!("invalid type {}", mt));
+                let hashset = self.get_common_methods_recursive(&t);
+                set = set.union(&hashset).cloned().collect();
+            }
+        }
+        set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
+    }
 
-    // pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-    //     let mut set = t.pretty_fields().collect::<HashSet<&Field>>();
-    //     match t.subtypes {
-    //         None => set,
-    //         Some(ref subtypes) => {
-    //             for subtype in subtypes {
-    //                 if let Some(t) = self.spec.get_type(subtype) {
-    //                     println!(
-    //                         "subtype {}",
-    //                         t.subtypes.as_ref().map(|t| t.len()).unwrap_or(0)
-    //                     );
-    //                     let hashset = self.get_common_methods_recursive(t);
-    //                     set = set.intersection(&hashset).cloned().collect();
-    //                 }
-    //             }
-    //             set
-    //         }
-    //     }
-    // }
+    pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
+        let mut set = t.pretty_fields().collect::<HashSet<&Field>>();
+        match t.subtypes {
+            None => set,
+            Some(ref subtypes) => {
+                for subtype in subtypes {
+                    if let Some(t) = self.spec.get_type(subtype) {
+                        println!(
+                            "subtype {}",
+                            t.subtypes.as_ref().map(|t| t.len()).unwrap_or(0)
+                        );
+                        let hashset = self.get_common_methods_recursive(t);
+                        set = set.intersection(&hashset).cloned().collect();
+                    }
+                }
+                set
+            }
+        }
+    }
 
-    // pub(crate) fn get_common_methods(&'a self, t: &Type) -> HashSet<&'a Field> {
-    //     let mut res = HashSet::<&Field>::new();
-    //     if let Some(subtypes) = t.subtypes.as_ref() {
-    //         if let Some(first) = subtypes.first() {
-    //             let first = self.spec.get_type(first).unwrap();
-    //             res = first.pretty_fields().collect();
-    //         }
-    //         for t in subtypes {
-    //             let t = self.spec.get_type(t).unwrap();
-    //             let hashset = self.get_common_methods_recursive(t);
-    //             res = res.intersection(&hashset).cloned().collect();
-    //         }
-    //     }
-    //     res
-    // }
+    pub(crate) fn get_common_methods(&'a self, t: &Type) -> HashSet<&'a Field> {
+        let mut res = HashSet::<&Field>::new();
+        if let Some(subtypes) = t.subtypes.as_ref() {
+            if let Some(first) = subtypes.first() {
+                let first = self.spec.get_type(first).unwrap();
+                res = first.pretty_fields().collect();
+            }
+            for t in subtypes {
+                let t = self.spec.get_type(t).unwrap();
+                let hashset = self.get_common_methods_recursive(t);
+                res = res.intersection(&hashset).cloned().collect();
+            }
+        }
+        res
+    }
 
-    // fn generate_enum_methods(&self, t: &Type) -> TokenStream {
-    //     if t.is_media() {
-    //         return quote!();
-    //     }
-    //     if let Some(subtypes) = t.subtypes.as_ref() {
-    //      let methods = self
-    //          .get_common_methods(t)
-    //          .iter()
-    //          .map(|f| {
-    //              let comment = f.description.into_comment();
-    //              let name = get_field_name(f);
-    //              let fieldname = format_ident!("get_{}", name);
-    //              let primative = is_primative(&f.types);
+    fn generate_enum_methods(&self, t: &Type) -> TokenStream {
+        if t.is_media() {
+            return quote!();
+        }
+        if let Some(subtypes) = t.subtypes.as_ref() {
+            let methods = self
+                .get_common_methods(t)
+                .iter()
+                .map(|f| {
+                    let comment = f.description.into_comment();
+                    let name = get_field_name(f);
+                    let fieldname = format_ident!("get_{}", name);
+                    let primative = is_primative(&f.types);
 
-    //              let unbox = self
-    //                  .choose_type
-    //                  .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
-    //                  .unwrap();
+                    let unbox = self
+                        .choose_type
+                        .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
+                        .unwrap();
 
-    //              let is_str = is_str_field(f);
-    //              let ret = if is_str {
-    //                  quote! { Cow<'a, str> }
-    //              } else if (f.required && primative) || (!f.required && primative) {
-    //                  unbox
-    //              } else {
-    //                  quote! { Cow<'a, #unbox> }
-    //              };
+                    let is_str = is_str_field(f);
+                    let ret = if is_str {
+                        quote! { &'a str }
+                    } else if (f.required && primative) || (!f.required && primative) {
+                        unbox
+                    } else {
+                        quote! { &'a #unbox }
+                    };
 
-    //              let ret = if f.required {
-    //                  ret
-    //              } else {
-    //                  quote! { Option<#ret> }
-    //              };
+                    let ret = if f.required {
+                        ret
+                    } else {
+                        quote! { Option<#ret> }
+                    };
 
-    //              let match_arms = subtypes
-    //                  .iter()
-    //                  .map(|t| get_type_name_str(t))
-    //                  .map(|t| format_ident!("{}", t))
-    //                  .map(|t| {
-    //                      quote! {
-    //                          Self::#t(ref v) => v.#fieldname()
-    //                      }
-    //                  });
+                    let match_arms = subtypes
+                        .iter()
+                        .map(|t| get_type_name_str(t))
+                        .map(|t| format_ident!("{}", t))
+                        .map(|t| {
+                            quote! {
+                                Self::#t(ref v) => v.#fieldname()
+                            }
+                        });
 
-    //              let mat = quote! {
-    //                  match self {
-    //                      #( #match_arms ),*
-    //                  }
-    //              };
+                    let mat = quote! {
+                        match self {
+                            #( #match_arms ),*
+                        }
+                    };
 
-    //              quote! {
-    //                  #comment
-    //                  pub fn #fieldname<'a>(&'a self) -> #ret  {
-    //                      #mat
-    //                  }
-    //              }
-    //          })
-    //          .collect_vec();
+                    quote! {
+                        #comment
+                        pub fn #fieldname<'a>(&'a self) -> #ret  {
+                            #mat
+                        }
+                    }
+                })
+                .collect_vec();
 
-    //      quote! {
-    //          #( #methods )*
-    //      }
-
-    //         quote!()
-    //     } else {
-    //         quote!()
-    //     }
-    // }
+            quote! {
+                #( #methods )*
+            }
+        } else {
+            quote!()
+        }
+    }
 
     /// Generate an impl with getters to allow type erasure
     fn generate_impl<T>(&self, name: &'a T) -> Result<TokenStream>
