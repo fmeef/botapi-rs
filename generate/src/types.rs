@@ -37,16 +37,14 @@ impl<'a> GenerateTypes<'a> {
                 let mytype = &types[0];
                 if is_inputfile_types(types) || (is_media && name == "media") {
                     INPUT_FILE.to_owned()
+                } else if is_chatid(types) {
+                    "ChatHandle".to_owned()
+                } else if types.len() > 1 {
+                    get_multitype_name_types(&name, types)
+                } else if nested == 0 {
+                    type_mapper(&mytype).to_owned()
                 } else {
-                    if is_chatid(types) {
-                        "ChatHandle".to_owned()
-                    } else if types.len() > 1 {
-                        get_multitype_name_types(&name, types)
-                    } else if nested == 0 {
-                        type_mapper(&mytype).to_owned()
-                    } else {
-                        mytype[ARRAY_OF.len() * nested..].to_owned()
-                    }
+                    mytype[ARRAY_OF.len() * nested..].to_owned()
                 }
             }),
         }
@@ -64,7 +62,7 @@ impl<'a> GenerateTypes<'a> {
                     .generate_struct(&v.name, &format!("NoSkip{}", v.name), false)
                     .unwrap();
                 let fromskip = self.generate_from_skip(v);
-                let b = self.generate_builder(&v).unwrap();
+                let b = self.generate_builder(v).unwrap();
                 let update = self.generate_update_ext(v);
                 let from = self.generate_from_update_ext(v);
                 quote! {
@@ -76,54 +74,52 @@ impl<'a> GenerateTypes<'a> {
 
                     #b
                 }
+            } else if v.name == INPUT_FILE {
+                self.generate_inputfile_enum()
             } else {
-                if v.name == INPUT_FILE {
-                    self.generate_inputfile_enum()
+                let vec = Vec::new();
+                let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
+                let subtypes = subtypes
+                    .iter()
+                    .filter_map(|v| self.spec.get_type(v))
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<&str>>();
+                let statuses = v
+                    .subtypes
+                    .iter()
+                    .flat_map(|v| v.iter())
+                    .flat_map(|st| {
+                        self.spec
+                            .get_type(st)
+                            .unwrap()
+                            .fields
+                            .iter()
+                            .flat_map(|v| v.iter())
+                            .filter(|field| field.name == "status")
+                            .map(|v| {
+                                println!("field {}", v.description);
+                                let d = escape(REGEX_STATUS.as_str());
+                                REGEX_STATUS
+                                    .find(&v.description)
+                                    .map(|v| &v.as_str()[1..v.as_str().len() - 1])
+                                    .unwrap_or_else(|| panic!("regex {} failed", d))
+                            })
+                            .map(|v| (v, st.as_str()))
+                    })
+                    .collect::<HashMap<&str, &str>>();
+                let e = if !statuses.is_empty() {
+                    self.generate_enum_internally_tagged(statuses, &v.name, "status")
+                        .unwrap()
                 } else {
-                    let vec = Vec::new();
-                    let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
-                    let subtypes = subtypes
-                        .iter()
-                        .filter_map(|v| self.spec.get_type(v))
-                        .map(|t| t.name.as_str())
-                        .collect::<Vec<&str>>();
-                    let statuses = v
-                        .subtypes
-                        .iter()
-                        .flat_map(|v| v.iter())
-                        .flat_map(|st| {
-                            self.spec
-                                .get_type(st)
-                                .unwrap()
-                                .fields
-                                .iter()
-                                .flat_map(|v| v.iter())
-                                .filter(|field| field.name == "status")
-                                .map(|v| {
-                                    println!("field {}", v.description);
-                                    let d = escape(REGEX_STATUS.as_str());
-                                    REGEX_STATUS
-                                        .find(&v.description)
-                                        .map(|v| &v.as_str()[1..v.as_str().len() - 1])
-                                        .expect(&format!("regex {} failed", d))
-                                })
-                                .map(|v| (v, st.as_str()))
-                        })
-                        .collect::<HashMap<&str, &str>>();
-                    let e = if !statuses.is_empty() {
-                        self.generate_enum_internally_tagged(statuses, &v.name, "status")
-                            .unwrap()
-                    } else {
-                        self.generate_enum_str(subtypes.as_slice(), &v.name)
-                            .unwrap()
-                    };
-                    let name = format_ident!("{}", v.name);
-                    let methods = self.generate_enum_methods(v);
-                    quote! {
-                        #e
-                        impl #name {
-                            #methods
-                        }
+                    self.generate_enum_str(subtypes.as_slice(), &v.name)
+                        .unwrap()
+                };
+                let name = format_ident!("{}", v.name);
+                let methods = self.generate_enum_methods(v);
+                quote! {
+                    #e
+                    impl #name {
+                        #methods
                     }
                 }
             }
@@ -133,7 +129,7 @@ impl<'a> GenerateTypes<'a> {
             .spec
             .types
             .values()
-            .filter_map(|v| self.generate_trait(&v).ok());
+            .filter_map(|v| self.generate_trait(v).ok());
         let impls = self
             .spec
             .types
@@ -177,7 +173,7 @@ impl<'a> GenerateTypes<'a> {
                 let fieldname = get_type_name_str(&f.name);
                 let choose = self
                     .choose_type
-                    .choose_type(f.types.as_slice(), Some(&t), &f.name, false, true)
+                    .choose_type(f.types.as_slice(), Some(t), &f.name, false, true)
                     .unwrap();
                 let name = format_ident!("{}", fieldname);
                 quote! {
@@ -242,7 +238,7 @@ impl<'a> GenerateTypes<'a> {
                 .get_common_methods_recursive_ext(t)
                 .iter()
                 .filter_map(|field| {
-                    let comment = field.description.into_comment();
+                    let comment = field.description.comment();
                     let name = get_field_name(field);
                     let fieldname = format_ident!("get_{}", name);
                     let primative = is_primative(&field.types);
@@ -251,7 +247,7 @@ impl<'a> GenerateTypes<'a> {
                         .choose_type
                         .choose_type_unbox(
                             field.types.as_slice(),
-                            Some(&t),
+                            Some(t),
                             &field.name,
                             false,
                             false,
@@ -261,7 +257,7 @@ impl<'a> GenerateTypes<'a> {
                     let is_str = is_str_field(field);
                     let ret = if is_str {
                         quote! { &'a str }
-                    } else if (field.required && primative) || (!field.required && primative) {
+                    } else if primative {
                         unbox
                     } else {
                         quote! { &'a #unbox }
@@ -286,7 +282,7 @@ impl<'a> GenerateTypes<'a> {
                         })
                         .collect_vec();
 
-                    if match_arms.len() == 0 {
+                    if match_arms.is_empty() {
                         None
                     } else {
                         let match_arms = match_arms.iter();
@@ -310,6 +306,7 @@ impl<'a> GenerateTypes<'a> {
 
                         let res = quote! {
                             #comment
+                            #[allow(clippy::needless_lifetimes)]
                             pub fn #fieldname<'a>(&'a self) -> #ret  {
                                 #mat
                             }
@@ -345,7 +342,7 @@ impl<'a> GenerateTypes<'a> {
                 let key = m
                     .returns
                     .iter()
-                    .map(|t| get_type_name_str(t))
+                    .map(get_type_name_str)
                     .collect::<Vec<String>>()
                     .join("");
 
@@ -364,7 +361,7 @@ impl<'a> GenerateTypes<'a> {
                 .pretty_fields()
                 .filter(|f| f.name != "update_id")
                 .map(|f| {
-                    let fieldname = get_field_name(&f);
+                    let fieldname = get_field_name(f);
                     let extname = get_type_name_str(&f.name);
                     let name = format_ident!("{}", fieldname);
                     let extname = format_ident!("{}", extname);
@@ -393,7 +390,7 @@ impl<'a> GenerateTypes<'a> {
         let skipname = format_ident!("NoSkip{}", t.name);
         let name = format_ident!("{}", t.name);
         let fieldnames = t.pretty_fields().map(|f| {
-            let fieldname = get_field_name(&f);
+            let fieldname = get_field_name(f);
             let fieldname = format_ident!("{}", fieldname);
             quote! {
                 #fieldname: t.#fieldname
@@ -401,7 +398,7 @@ impl<'a> GenerateTypes<'a> {
         });
 
         let into_fieldnames = t.pretty_fields().map(|f| {
-            let fieldname = get_field_name(&f);
+            let fieldname = get_field_name(f);
             let fieldname = format_ident!("{}", fieldname);
             quote! {
                 #fieldname: self.#fieldname
@@ -432,6 +429,7 @@ impl<'a> GenerateTypes<'a> {
                }
            }
 
+           #[allow(clippy::from_over_into)]
             impl Into<#skipname> for #name {
                 fn into(self) -> #skipname {
                     #skipname {
@@ -459,7 +457,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputfile_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.name == INPUT_FILE {
             let q = quote! {
-               pub fn to_form(self, data: Form) -> Result<(Form, String)> {
+               pub fn convert_form(self, data: Form) -> Result<(Form, String)> {
                       match self {
                         InputFile::Bytes(FileBytes { name, bytes: Some(bytes) }) => {
                             let attach = format!("attach://{}", name);
@@ -482,7 +480,7 @@ impl<'a> GenerateTypes<'a> {
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
         if t.is_media() {
             let q = quote! {
-               fn to_form(self, data: Form) -> Result<(Form, String)> {
+               fn convert_form(self, data: Form) -> Result<(Form, String)> {
                    match self.media {
                         Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
                             let attach = format!("attach://{}", name);
@@ -501,16 +499,14 @@ impl<'a> GenerateTypes<'a> {
     }
 
     fn generate_multitype_enum_return(&self, types: &[String]) -> Result<TokenStream> {
-        if types.len() < 2 {
-            Ok(quote!())
-        } else if types.iter().all(|t| !is_primative(&[t])) {
+        if types.len() < 2 || types.iter().all(|t| !is_primative(&[t])) {
             Ok(quote!())
         } else {
-            let res = if !is_inputfile_types(&types) {
-                if let Some(name) = self.get_multitype_name_return(&types) {
-                    let t = self.generate_enum_str(&types, &name)?;
-                    if !is_json_types(&types) {
-                        let typeiter = types.iter().map(|t| get_type_name_str(t));
+            let res = if !is_inputfile_types(types) {
+                if let Some(name) = self.get_multitype_name_return(types) {
+                    let t = self.generate_enum_str(types, &name)?;
+                    if !is_json_types(types) {
+                        let typeiter = types.iter().map(get_type_name_str);
                         let types = generate_fmt_display_enum(&name, typeiter);
                         quote! {
                             #t
@@ -538,17 +534,15 @@ impl<'a> GenerateTypes<'a> {
         for jsontype in self.spec.types.values() {
             if let Some(fields) = jsontype.fields.as_ref() {
                 for field in fields {
-                    if field.types.len() > 1 {
-                        if !is_inputfile(&field) {
-                            if let Some(name) = self.get_multitype_name(&field) {
-                                let t = self.generate_enum_str(&field.types, &name)?;
-                                tokens.extend(t);
+                    if field.types.len() > 1 && !is_inputfile(field) {
+                        if let Some(name) = self.get_multitype_name(field) {
+                            let t = self.generate_enum_str(&field.types, &name)?;
+                            tokens.extend(t);
 
-                                if !is_json(&field) {
-                                    let typeiter = field.types.iter().map(|t| get_type_name_str(t));
-                                    let t = generate_fmt_display_enum(&name, typeiter);
-                                    tokens.extend(t);
-                                }
+                            if !is_json(field) {
+                                let typeiter = field.types.iter().map(get_type_name_str);
+                                let t = generate_fmt_display_enum(&name, typeiter);
+                                tokens.extend(t);
                             }
                         }
                     }
@@ -559,17 +553,15 @@ impl<'a> GenerateTypes<'a> {
         for method in self.spec.methods.values() {
             if let Some(fields) = method.fields.as_ref() {
                 for field in fields {
-                    if field.types.len() > 1 {
-                        if !is_inputfile(&field) {
-                            if let Some(name) = self.get_multitype_name(&field) {
-                                let t = self.generate_enum_str(&field.types, &name)?;
-                                tokens.extend(t);
+                    if field.types.len() > 1 && !is_inputfile(field) {
+                        if let Some(name) = self.get_multitype_name(field) {
+                            let t = self.generate_enum_str(&field.types, &name)?;
+                            tokens.extend(t);
 
-                                if !is_json(&field) {
-                                    let typeiter = field.types.iter().map(|t| get_type_name_str(t));
-                                    let t = generate_fmt_display_enum(&name, typeiter);
-                                    tokens.extend(t);
-                                }
+                            if !is_json(field) {
+                                let typeiter = field.types.iter().map(get_type_name_str);
+                                let t = generate_fmt_display_enum(&name, typeiter);
+                                tokens.extend(t);
                             }
                         }
                     }
@@ -582,7 +574,7 @@ impl<'a> GenerateTypes<'a> {
 
     fn generate_builder(&self, t: &Type) -> Result<TokenStream> {
         let fields = t.pretty_fields().collect_vec();
-        let res = if fields.len() > 0 {
+        let res = if !fields.is_empty() {
             let typename = get_type_name(t);
             let typename_tokens = format_ident!("{}", typename);
             let buildername = format!("{}Builder", typename);
@@ -614,7 +606,7 @@ impl<'a> GenerateTypes<'a> {
                     .choose_type
                     .choose_type(&f.types, Some(t), &f.name, false, true)
                     .unwrap();
-                let comment = f.description.into_comment();
+                let comment = f.description.comment();
                 quote! {
                     #comment
                     pub fn #name (mut self, #fieldname: #fieldtype) -> Self {
@@ -662,23 +654,21 @@ impl<'a> GenerateTypes<'a> {
             .expect("failed to lock write access");
         let key = types
             .iter()
-            .map(|t| get_type_name_str(t))
+            .map(get_type_name_str)
             .collect::<Vec<String>>()
             .join("");
         if is_inputfile_types(types) {
             Some(INPUT_FILE.to_owned())
+        } else if multitypes.get(&key).is_none() {
+            let name = types
+                .iter()
+                .map(|t| get_type_name_str(&t))
+                .collect::<Vec<String>>()
+                .join("");
+            multitypes.insert(key, name.clone());
+            Some(name)
         } else {
-            if let None = multitypes.get(&key) {
-                let name = types
-                    .iter()
-                    .map(|t| get_type_name_str(&t))
-                    .collect::<Vec<String>>()
-                    .join("");
-                multitypes.insert(key, name.clone());
-                Some(name)
-            } else {
-                None
-            }
+            None
         }
     }
 
@@ -692,19 +682,17 @@ impl<'a> GenerateTypes<'a> {
         let key = field_name
             .types
             .iter()
-            .map(|t| get_type_name_str(t))
+            .map(get_type_name_str)
             .collect::<Vec<String>>()
             .join("");
         if is_inputfile(field_name) {
             Some(INPUT_FILE.to_owned())
+        } else if multitypes.get(&key).is_none() {
+            let name = get_multitype_name(field_name);
+            multitypes.insert(key, name.clone());
+            Some(name)
         } else {
-            if let None = multitypes.get(&key) {
-                let name = get_multitype_name(field_name);
-                multitypes.insert(key, name.clone());
-                Some(name)
-            } else {
-                None
-            }
+            None
         }
     }
 
@@ -715,25 +703,25 @@ impl<'a> GenerateTypes<'a> {
         name: &str,
         tag: &str,
     ) -> Result<TokenStream> {
-        let e = if types.len() > 0 {
+        let e = if !types.is_empty() {
             let names_iter = types
                 .values()
-                .map(|v| get_type_name_str(v))
+                .map(get_type_name_str)
                 .map(|v| format_ident!("{}", v));
 
             let first_name = types
                 .values()
-                .map(|v| get_type_name_str(v))
+                .map(get_type_name_str)
                 .map(|v| format_ident!("{}", v))
                 .next();
             let types_iter = types
                 .values()
-                .map(|v| type_without_array(v))
+                .map(type_without_array)
                 .map(|v| type_mapper(&v).to_owned())
                 .map(|v| format_ident!("{}", v));
             let first_type = types
                 .values()
-                .map(|v| type_without_array(v))
+                .map(type_without_array)
                 .map(|v| type_mapper(&v).to_owned())
                 .map(|v| format_ident!("{}", v))
                 .next();
@@ -782,7 +770,7 @@ impl<'a> GenerateTypes<'a> {
         I: AsRef<str>,
     {
         let name = format_ident!("{}", name.as_ref());
-        let e = if types.len() > 0 {
+        let e = if !types.is_empty() {
             let names_iter = types
                 .iter()
                 .map(|v| get_type_name_str(v))
@@ -889,7 +877,7 @@ impl<'a> GenerateTypes<'a> {
             {
 
                 /// Return a reference to the value contained within this type
-                pub fn inner_ref<'a>(&'a self) -> &'a T {
+                pub fn inner_ref(&self) -> & '_ T {
                     &self.0
                 }
 
@@ -910,7 +898,7 @@ impl<'a> GenerateTypes<'a> {
 
             {
                 /// Return a reference to the value contained within this type
-                pub fn inner_ref<'a>(&'a self) -> &'a T {
+                pub fn inner_ref(&self) -> & '_ T {
                     &self.0.0
                 }
 
@@ -1018,7 +1006,7 @@ impl<'a> GenerateTypes<'a> {
                 }
                 */
 
-                pub fn to_form(self, data: Form, name: String) -> Result<(Form, String)> {
+                pub fn convert_form(self, data: Form, name: String) -> Result<(Form, String)> {
                       match self {
                         Self::Bytes(bytes) => {
                             let attach = format!("attach://{}", name);
@@ -1065,18 +1053,16 @@ impl<'a> GenerateTypes<'a> {
     {
         let t = self
             .spec
-            .get_type(&typename.as_ref())
+            .get_type(typename.as_ref())
             .ok_or_else(|| anyhow!("type not found"))?;
         let regular_type = t
             .fields
             .as_ref()
-            .map(|f| {
+            .and_then(|f| {
                 f.iter()
                     .find(|f| f.name == "type")
-                    .map(|v| v.types.get(0))
-                    .flatten()
+                    .and_then(|v| v.types.first())
             })
-            .flatten()
             .map(|v| v.as_str());
 
         if t.fields.as_ref().map_or(0, |f| f.len()) == 0 {
@@ -1089,7 +1075,7 @@ impl<'a> GenerateTypes<'a> {
                 .map(|v| {
                     let t = self
                         .choose_type
-                        .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required, true)
+                        .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, true)
                         .unwrap();
                     if should_wrap(&v.types) {
                         let g = format_ident!("{}", generic).to_token_stream();
@@ -1104,7 +1090,7 @@ impl<'a> GenerateTypes<'a> {
             let fieldnames = t
                 .pretty_fields()
                 .filter(|f| f.required && f.name != "type")
-                .map(|f| get_field_name(f))
+                .map(get_field_name)
                 .map(|v| format_ident!("{}", v));
             let tgtype = t.fields.as_ref().map_or_else(
                 || quote!(),
@@ -1140,10 +1126,10 @@ impl<'a> GenerateTypes<'a> {
                 .filter(|f| f.required && f.name != "type")
                 .map(|f| {
                     let v = get_field_name(f);
-                    let boxed = self.spec.check_parent(&t, &f.types);
+                    let boxed = self.spec.check_parent(t, &f.types);
                     let v = format_ident!("{}", v);
                     if !should_wrap(&f.types) {
-                        quote! { #v: #v.into() }
+                        quote! { #v }
                     } else if boxed {
                         quote! { #v: BoxWrapper(#v.into()) }
                     } else {
@@ -1171,14 +1157,15 @@ impl<'a> GenerateTypes<'a> {
                 }
                 _ => quote!(),
             };
-            let fieldtypes = fieldtypes.into_iter().filter_map(|v| v).collect_vec();
-            let g = if fieldtypes.len() > 0 {
+            let fieldtypes = fieldtypes.into_iter().flatten().collect_vec();
+            let g = if !fieldtypes.is_empty() {
                 quote! {  <#( #fieldtypes ),*> }
             } else {
                 quote!()
             };
 
             let res = quote! {
+                #[allow(clippy::too_many_arguments)]
                 pub fn new #g ( #( #fieldnames: #generics ),*  #param ) -> Self {
                     Self {
                         #tgtype
@@ -1196,7 +1183,7 @@ impl<'a> GenerateTypes<'a> {
         let methods = t
             .pretty_fields()
             .map(|f| {
-                let comment = f.description.into_comment();
+                let comment = f.description.comment();
                 let name = get_field_name(f);
                 // let fieldname = format_ident!("get_{}", name);
                 let fieldname_ref = format_ident!("get_{}", name);
@@ -1206,7 +1193,7 @@ impl<'a> GenerateTypes<'a> {
                 let boxed = self.spec.check_parent(t, &f.types);
                 let unbox_nowrap = &self
                     .choose_type
-                    .choose_type_unbox_nowrap(f.types.as_slice(), Some(&t), &f.name, false, false)
+                    .choose_type_unbox_nowrap(f.types.as_slice(), Some(t), &f.name, false, false)
                     .unwrap();
                 let is_str = is_str_field(f);
 
@@ -1240,43 +1227,17 @@ impl<'a> GenerateTypes<'a> {
                     } else {
                         quote! { BoxWrapper(Unbox(#assign)) }
                     };
-                    let optionassign = quote! {
-                        if let Some(#returnname) = #returnname {
-                            Some(#assign)
-                        } else {
-                             None
-                        }
-                    };
-                       if is_primative(&f.types) {
-                        quote! {
-                            self.#returnname =  #optionassign;
-                        }
+                    let optionassign = if ! should_wrap(&f.types) || f.name == "type" {
+                        quote! { #returnname }
                     } else {
                         quote! {
-                            self.#returnname = #optionassign;
+                            #returnname .map(|#returnname| #assign)
                         }
+                    };
+                    quote! {
+                        self.#returnname = #optionassign;
                     }
                 };
-
-                // let access = if is_str && f.required {
-                //     quote! { Cow::Borrowed(self.#returnname.as_str()) }
-                // } else if primative {
-                //     quote! { self.#returnname }
-                // } else if boxed {
-                //     quote! { Cow::Borrowed(self.#returnname.as_ref()) }
-                // } else {
-                //     quote! { Cow::Borrowed(&self.#returnname) }
-                // };
-
-                // let vaccess = if is_str {
-                //     quote! { Cow::Borrowed(v.as_str()) }
-                // } else if boxed {
-                //     quote! { Cow::Borrowed(v.as_ref()) }
-                // } else if primative {
-                //     quote! { *v }
-                // } else {
-                //     quote! { Cow::Borrowed(v) }
-                // };
 
                 let refaccess = if is_str && f.required {
                     quote! { self.#returnname.as_str() }
@@ -1288,15 +1249,15 @@ impl<'a> GenerateTypes<'a> {
                     quote! { &self.#returnname }
                 };
 
+                let mut unit = false;
                 let refvaccess = if is_str {
                     quote! { v.as_str() }
-                } else if should_wrap(&f.types) && boxed {
-                    quote! { v.inner_ref() }
-                }else if should_wrap(&f.types) {
+                } else if (should_wrap(&f.types) && boxed) || should_wrap(&f.types) {
                     quote! { v.inner_ref() }
                 } else if primative {
                     quote! { *v }
                 } else {
+                    unit = true;
                     quote! { v }
                 };
 
@@ -1310,7 +1271,7 @@ impl<'a> GenerateTypes<'a> {
 
                 let refret = if is_str {
                     quote! { &'a str }
-                } else if (f.required && primative) || (!f.required && primative) {
+                } else if primative {
                     unbox_nowrap.to_owned()
                 } else {
                     quote! { &'a #unbox_nowrap }
@@ -1342,6 +1303,16 @@ impl<'a> GenerateTypes<'a> {
                     quote! { Option<#unbox_nowrap> }
                 };
 
+                let access = if unit {
+                    quote! { self.#returnname.as_ref() }
+                } else {
+                    quote! {
+                        self.#returnname.as_ref().map(|v| {
+                            #refvaccess
+                        })
+                    }
+                };
+
                 if f.required {
                     quote! {
                         // #comment
@@ -1350,11 +1321,13 @@ impl<'a> GenerateTypes<'a> {
                         // }
 
                         #comment
+                        #[allow(clippy::needless_lifetimes)]
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret  {
                             #refaccess
                         }
 
                         #comment
+                        #[allow(clippy::needless_lifetimes)]
                         #public fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self  {
                             #assign
                             self
@@ -1370,13 +1343,13 @@ impl<'a> GenerateTypes<'a> {
                         // }
 
                         #comment
+                        #[allow(clippy::needless_lifetimes, clippy::option_as_ref_deref)]
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret {
-                            self.#returnname.as_ref().map(|v| {
-                                #refvaccess
-                            })
+                           #access
                         }
 
                         #comment
+                        #[allow(clippy::needless_lifetimes)]
                         #public fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self  {
                             #assign
                             self
@@ -1459,7 +1432,7 @@ impl<'a> GenerateTypes<'a> {
     //         Tuple type returned is: ({})",
     //         doctypes
     //     )
-    //     .into_comment();
+    //     .comment();
 
     //     if is_trait {
     //         quote! {
@@ -1485,8 +1458,9 @@ impl<'a> GenerateTypes<'a> {
                 let t = self
                     .spec
                     .get_type(mt)
-                    .expect(&format!("invalid type {}", mt));
-                let hashset = self.get_common_methods_recursive(&t);
+                    .ok_or_else(|| panic!("invalid type {}", mt))
+                    .unwrap();
+                let hashset = self.get_common_methods_recursive(t);
                 set = set.union(&hashset).cloned().collect();
             }
         }
@@ -1538,20 +1512,20 @@ impl<'a> GenerateTypes<'a> {
                 .get_common_methods(t)
                 .iter()
                 .map(|f| {
-                    let comment = f.description.into_comment();
+                    let comment = f.description.comment();
                     let name = get_field_name(f);
                     let fieldname = format_ident!("get_{}", name);
                     let primative = is_primative(&f.types);
 
                     let unbox = self
                         .choose_type
-                        .choose_type_unbox(f.types.as_slice(), Some(&t), &f.name, false, false)
+                        .choose_type_unbox(f.types.as_slice(), Some(t), &f.name, false, false)
                         .unwrap();
 
                     let is_str = is_str_field(f);
                     let ret = if is_str {
                         quote! { &'a str }
-                    } else if (f.required && primative) || (!f.required && primative) {
+                    } else if primative {
                         unbox
                     } else {
                         quote! { &'a #unbox }
@@ -1565,7 +1539,7 @@ impl<'a> GenerateTypes<'a> {
 
                     let match_arms = subtypes
                         .iter()
-                        .map(|t| get_type_name_str(t))
+                        .map(get_type_name_str)
                         .map(|t| format_ident!("{}", t))
                         .map(|t| {
                             quote! {
@@ -1581,6 +1555,7 @@ impl<'a> GenerateTypes<'a> {
 
                     quote! {
                         #comment
+                        #[allow(clippy::needless_lifetimes)]
                         pub fn #fieldname<'a>(&'a self) -> #ret  {
                             #mat
                         }
@@ -1608,8 +1583,8 @@ impl<'a> GenerateTypes<'a> {
 
         let typename = format_ident!("{}", t.name);
         let methods = self.generate_impl_functions(t, true);
-        let form_generator = self.generate_inputmedia_getter(&t)?;
-        let inputmedia_generator = self.generate_inputfile_getter(&t)?;
+        let form_generator = self.generate_inputmedia_getter(t)?;
+        let inputmedia_generator = self.generate_inputfile_getter(t)?;
         let constructor = self.generate_constructor(name)?;
         let res = if let Some(subtypes) = t.subtypes.as_ref() {
             let impls = subtypes.iter().map(|v| self.generate_trait_impl(&v).ok());
@@ -1646,13 +1621,13 @@ impl<'a> GenerateTypes<'a> {
         let methods = t
             .pretty_fields()
             .map(|f| {
-                let comment = f.description.into_comment();
+                let comment = f.description.comment();
                 let name = get_field_name(f);
                 // let fieldname = format_ident!("get_{}", name);
                 let fieldname_set = format_ident!("set_{}", name);
                 let fieldname_ref = format_ident!("get_{}", name);
 
-                let returnname = format_ident!("{}", name);                
+                let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types);
                 // let unbox = self
                 //     .choose_type
@@ -1661,7 +1636,7 @@ impl<'a> GenerateTypes<'a> {
 
                 let unbox_nowrap = self
                     .choose_type
-                    .choose_type_unbox_nowrap(f.types.as_slice(), Some(&t), &f.name, false, false)
+                    .choose_type_unbox_nowrap(f.types.as_slice(), Some(t), &f.name, false, false)
                     .unwrap();
 
                 let is_str = is_str_field(f);
@@ -1676,7 +1651,7 @@ impl<'a> GenerateTypes<'a> {
 
                 let refret = if is_str {
                     quote! { &'a str }
-                } else if (f.required && primative) || (!f.required && primative) {
+                } else if primative {
                     unbox_nowrap.clone()
                 } else {
                     quote! { &#unbox_nowrap }
@@ -1695,32 +1670,19 @@ impl<'a> GenerateTypes<'a> {
                 };
 
                 let setname = if f.required {
-                    quote!{ #unbox_nowrap }
+                    quote! { #unbox_nowrap }
                 } else {
                     quote! { Option<#unbox_nowrap> }
                 };
 
-                if f.required {
-                    quote! {
-                        // #comment
-                        // fn #fieldname<'a>(&'a self) -> #ret;
+                quote! {
+                    #comment
+                    #[allow(clippy::needless_lifetimes)]
+                    fn #fieldname_ref<'a>(&'a self) -> #refret;
 
-                        #comment
-                        fn #fieldname_ref<'a>(&'a self) -> #refret;
-
-                        #comment
-                        fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self;
-                    }
-                } else {
-                    quote! {
-                        // #comment
-                        // fn #fieldname<'a>(&'a self) -> #ret;
-
-                        #comment
-                        fn #fieldname_ref<'a>(&'a self) -> #refret;
-
-                        #comment
-                        fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self;                    }
+                    #comment
+                    #[allow(clippy::needless_lifetimes)]
+                    fn #fieldname_set<'a>(&'a mut self, #returnname : #setname) -> &'a mut Self;
                 }
             })
             .collect_vec();
@@ -1743,7 +1705,7 @@ impl<'a> GenerateTypes<'a> {
             .values()
             .filter(|t| t.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0)
             .map(|t| {
-                let name = format_ident!("{}", get_type_name(&t));
+                let name = format_ident!("{}", get_type_name(t));
 
                 let test_name_msgpack =
                     format_ident!("rmp_serialize_named_{}", t.name.to_case(Case::Snake));
@@ -1806,45 +1768,43 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", name.as_ref());
 
-        let fieldnames = field_iter(&t, |f| {
+        let fieldnames = field_iter(t, |f| {
             let v = &f.name;
             let fieldname = get_field_name(f);
             let name = format_ident!("{}", fieldname);
-            let comment = f.description.into_comment();
+            let comment = f.description.comment();
             if f.required {
                 quote! {
                     #comment
                     #[serde(rename = #v)]
                     pub #name
                 }
-            } else {
-                if serde_skip {
-                    quote! {
-                        #comment
-                        #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
-                        pub #name
-                    }
-                } else {
-                    quote! { pub #name }
+            } else if serde_skip {
+                quote! {
+                    #comment
+                    #[serde(skip_serializing_if = "Option::is_none", rename = #v, default)]
+                    pub #name
                 }
+            } else {
+                quote! { pub #name }
             }
         });
         let fieldtypes = t.pretty_fields().map(|v| {
             self.choose_type
-                .choose_type(v.types.as_slice(), Some(&t), &v.name, !v.required, false)
+                .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, false)
                 .ok()
         });
 
-        let comments = field_iter(&t, |v| v.description.into_comment());
+        let comments = field_iter(t, |v| v.description.comment());
         let struct_comment = if serde_skip {
-            t.description.concat().into_comment()
+            t.description.concat().comment()
         } else {
             format!(
-                "Companion type to {} that doesn't skip fields when serializing. 
+                "Companion type to {} that doesn't skip fields when serializing.
                 Used for certain deserializers that use arrays to represent struct members",
                 t.name
             )
-            .into_comment()
+            .comment()
         };
 
         let res = quote! {
@@ -1861,14 +1821,17 @@ impl<'a> GenerateTypes<'a> {
     }
 }
 
+#[allow(unused_imports)]
 mod test {
+    use super::*;
+    use std::sync::{Arc, RwLock};
     #[test]
     fn common_methods() {
         let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();
         let spec: Spec = serde_json::from_str(&json).unwrap();
         let spec = Arc::new(spec);
-        let t = spec.get_type("ChatMember").unwrap().clone();
+        let t = spec.get_type("ChatMember").unwrap();
         let types = GenerateTypes::new(Arc::clone(&spec), Arc::new(RwLock::new(HashMap::new())));
-        assert!(types.get_common_methods(&t).len() > 0);
+        assert!(!types.get_common_methods(t).is_empty());
     }
 }

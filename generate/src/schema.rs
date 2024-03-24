@@ -47,12 +47,10 @@ fn all_vertex_sets<'a>(
         return;
     }
 
-    if dataindex == data.len() {
-        data.push(&sets[setindex]);
-    } else if dataindex > data.len() {
-        panic!("overflow");
-    } else {
-        data[dataindex] = &sets[setindex];
+    match dataindex {
+        v if v == data.len() => data.push(sets[setindex]),
+        _ if dataindex > data.len() => panic!("overflow"),
+        _ => data[dataindex] = &sets[setindex],
     }
 
     all_vertex_sets(sets, setindex + 1, size, dataindex + 1, data, out);
@@ -61,7 +59,7 @@ fn all_vertex_sets<'a>(
 }
 
 /// Convert a spec's types into an iterator over edges in the type digraph
-fn edges_iter<'a>(spec: &'a Spec) -> impl Iterator<Item = (&'a Type, &'a Type)> {
+fn edges_iter(spec: &Spec) -> impl Iterator<Item = (&'_ Type, &'_ Type)> {
     spec.iter_types()
         .filter_map(move |t| {
             t.fields.as_ref().map(move |f| {
@@ -69,7 +67,7 @@ fn edges_iter<'a>(spec: &'a Spec) -> impl Iterator<Item = (&'a Type, &'a Type)> 
                     field
                         .types
                         .iter()
-                        .filter_map(|t2| spec.get_type(&t2))
+                        .filter_map(|t2| spec.get_type(t2))
                         .map(move |t2| (t, t2))
                 })
             })
@@ -303,17 +301,17 @@ impl Type {
 #[allow(dead_code)]
 impl Spec {
     /// Gets a type from the spec by name, None if nonexistent
-    pub(crate) fn get_type<'a, T: AsRef<str>>(&'a self, name: T) -> Option<&'a Type> {
+    pub(crate) fn get_type<T: AsRef<str>>(&self, name: T) -> Option<&'_ Type> {
         self.types.get(name.as_ref())
     }
 
     /// Gets a method from the spec by name, None if nonexistent
-    pub(crate) fn get_method<'a, T: AsRef<str>>(&'a self, name: T) -> Option<&'a Method> {
+    pub(crate) fn get_method<T: AsRef<str>>(&self, name: T) -> Option<&'_ Method> {
         self.methods.get(name.as_ref())
     }
 
     /// returns an Iterator over all types in this spec
-    pub(crate) fn iter_types<'a>(&'a self) -> impl Iterator<Item = &'a Type> {
+    pub(crate) fn iter_types(&self) -> impl Iterator<Item = &'_ Type> {
         self.types.values()
     }
 
@@ -331,7 +329,7 @@ impl Spec {
 
         let mut types = Vec::new();
         for st in subtypes {
-            let ty = self.get_type(&st).context("invalid type name")?;
+            let ty = self.get_type(st).context("invalid type name")?;
             types.push(ty);
         }
 
@@ -340,21 +338,17 @@ impl Spec {
 
     /// Get a list of a type's subtypes, None if the type is nonexistent, Err if any of the
     /// subtypes are nonexistent
-    fn get_subtype_of<'a, T: AsRef<str>>(&'a self, name: T) -> Result<Option<Vec<&'a Type>>> {
-        let res = self
-            .types
-            .get(name.as_ref())
-            .map(|t| {
-                t.subtype_of.as_ref().map(|s| {
-                    s.iter()
-                        .map(|st| {
-                            self.get_type(&st)
-                                .ok_or_else(|| anyhow!("invalid type name"))
-                        })
-                        .collect::<Result<Vec<&Type>>>()
-                })
+    fn get_subtype_of<T: AsRef<str>>(&self, name: T) -> Result<Option<Vec<&'_ Type>>> {
+        let res = self.types.get(name.as_ref()).and_then(|t| {
+            t.subtype_of.as_ref().map(|s| {
+                s.iter()
+                    .map(|st| {
+                        self.get_type(st)
+                            .ok_or_else(|| anyhow!("invalid type name"))
+                    })
+                    .collect::<Result<Vec<&Type>>>()
             })
-            .flatten();
+        });
 
         res.map_or(Ok(None), |v| v.map(Some))
     }
@@ -380,7 +374,7 @@ impl Spec {
                     .iter()
                     .flat_map(|v| v.iter())
                     .filter_map(|v| self.get_type(v))
-                    .chain([v].into_iter())
+                    .chain([v])
             })
             .any(|v| {
                 let boxedcheck = format!("{}{}", v.name, parent.name);

@@ -101,7 +101,7 @@ impl Webhook {
             BotUrl::Address(ref addr, ip) => {
                 self.bot
                     .set_webhook(
-                        &addr,
+                        addr,
                         None,
                         Some(&ip.to_string()),
                         None,
@@ -114,7 +114,7 @@ impl Webhook {
             BotUrl::Host(ref host) => {
                 self.bot
                     .set_webhook(
-                        &host,
+                        host,
                         None,
                         None,
                         None,
@@ -139,7 +139,7 @@ impl Webhook {
         self,
     ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>>, ApiError> {
         let (tx, mut rx) = mpsc::channel(128);
-        let cookie = self.cookie.clone();
+        let cookie = self.cookie;
         let svc = make_service_fn(move |_: &AddrStream| {
             let tx = tx.clone();
             async move {
@@ -164,7 +164,7 @@ impl Webhook {
 
         let server = Server::bind(&self.addr).serve(svc);
 
-        let fut = tokio::task::spawn(async move { server.await });
+        let fut = tokio::task::spawn(server);
 
         if let Err(err) = self.setup().await {
             self.teardown().await?;

@@ -5,7 +5,7 @@ use quote::{format_ident, quote, ToTokens, __private::TokenStream};
 use std::sync::Arc;
 
 pub(crate) trait ChooserFn {
-    fn cb<'b, 'c>(self: &Self, types: &TypeChooserOpts<'b, 'c>) -> String;
+    fn cb(&self, types: &TypeChooserOpts<'_, '_>) -> String;
 }
 
 pub(crate) fn no_lifetime(f: &Field) -> bool {
@@ -17,7 +17,7 @@ impl<F> ChooserFn for F
 where
     F: for<'a, 'b, 'c> Fn(&'a TypeChooserOpts<'b, 'c>) -> String,
 {
-    fn cb<'b, 'c>(self: &Self, types: &TypeChooserOpts<'b, 'c>) -> String {
+    fn cb(&self, types: &TypeChooserOpts<'_, '_>) -> String {
         self(types)
     }
 }
@@ -115,7 +115,7 @@ where
 }
 
 /// Take a type name and return a slice without a leading "Array of.*"
-pub(crate) fn type_without_array<'a, T>(t: &'a T) -> &'a str
+pub(crate) fn type_without_array<T>(t: &T) -> &'_ str
 where
     T: AsRef<str>,
 {
@@ -254,6 +254,7 @@ impl<'a> ChooseType<'a> {
     /// Generate the type for a specific field, depending if we have an array type,
     /// a api type that needs to be mapped to a native type, or a choice of types that
     /// should be either narrowed down to owe or turned into an enum type
+    #[allow(clippy::too_many_arguments)]
     fn choose_type_private<T, F>(
         &self,
         types: &[String],
@@ -282,7 +283,7 @@ impl<'a> ChooseType<'a> {
         };
 
         let checked = if let Some(parent) = parent {
-            self.spec.check_parent(parent, &opts.types)
+            self.spec.check_parent(parent, opts.types)
         } else {
             false
         };
@@ -431,12 +432,7 @@ where
         false
     } else {
         let field = &field[0];
-        match field.as_ref() {
-            "Integer" => true,
-            "Boolean" => true,
-            "Float" => true,
-            _ => false,
-        }
+        matches!(field.as_ref(), "Integer" | "Boolean" | "Float")
     }
 }
 
@@ -456,14 +452,14 @@ where
 
 /// Helper trait for turing &str things into doc comments
 pub(crate) trait IntoComment {
-    fn into_comment(&self) -> TokenStream;
+    fn comment(&self) -> TokenStream;
 }
 
 impl<T> IntoComment for T
 where
     T: AsRef<str>,
 {
-    fn into_comment(&self) -> TokenStream {
+    fn comment(&self) -> TokenStream {
         let comment = self.as_ref();
         quote! {
             #[allow(rustdoc::invalid_html_tags)]

@@ -4,6 +4,7 @@ use crate::{util::*, MultiTypes, INPUT_FILE};
 use anyhow::{anyhow, Result};
 use once_cell::sync::OnceCell;
 use quote::{format_ident, quote, ToTokens, __private::TokenStream};
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// Generator for telegram api methods. This hould be run after GenerateTypes
@@ -24,8 +25,8 @@ impl<'a> GenerateMethods<'a> {
     }
 
     /// Render a rust source file with api methods
-    pub(crate) fn generate_methods(self: &Arc<Self>) -> Result<String> {
-        let this = Arc::clone(self);
+    pub(crate) fn generate_methods(self: &Rc<Self>) -> Result<String> {
+        let this = Rc::clone(self);
         let choosetype = ChooseType::new(Arc::clone(&self.spec), move |opts| {
             if is_chatid(opts.types) {
                 "ChatHandle".to_owned()
@@ -49,7 +50,7 @@ impl<'a> GenerateMethods<'a> {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|f| get_field_name(f))
+            .map(get_field_name)
             .map(|f| format_ident!("{}", f).to_token_stream());
         let types = method
             .fields
@@ -57,7 +58,7 @@ impl<'a> GenerateMethods<'a> {
             .unwrap_or_default()
             .iter()
             .map(|f| {
-                if is_inputfile(&f) {
+                if is_inputfile(f) {
                     let q = quote! { FileData };
                     is_optional(f, q).to_token_stream()
                 } else if is_str_field(f) {
@@ -89,7 +90,7 @@ impl<'a> GenerateMethods<'a> {
             .unwrap_or_default()
             .iter()
             .filter(|m| m.required)
-            .map(|f| get_field_name(f))
+            .map(get_field_name)
             .map(|f| format_ident!("{}", f).to_token_stream());
         let (types, generics): (Vec<Option<TokenStream>>, Vec<TokenStream>) = method
             .fields
@@ -98,7 +99,7 @@ impl<'a> GenerateMethods<'a> {
             .iter()
             .filter(|m| m.required)
             .map(|f| {
-                let v = if is_inputfile(&f) {
+                let v = if is_inputfile(f) {
                     let q = quote! { FileData };
                     is_optional(f, q).to_token_stream()
                 } else if is_str_field(f) {
@@ -129,7 +130,7 @@ impl<'a> GenerateMethods<'a> {
 
         (
             typenames.collect(),
-            types.into_iter().filter_map(|v| v).collect(),
+            types.into_iter().flatten().collect(),
             generics,
         )
     }
@@ -145,27 +146,9 @@ impl<'a> GenerateMethods<'a> {
         )?;
         let name = get_method_name(method);
         let name = format_ident!("{}", name);
-        let r = method.fields.as_ref().map_or_else(
-            || Vec::new(),
-            |f| {
-                f.iter()
-                    .map(|f| {
-                        if !f.required
-                            || is_primative(&f.types)
-                            || is_inputfile(f)
-                            || is_chatid(&f.types)
-                        {
-                            quote!()
-                        } else {
-                            quote! { & }
-                        }
-                    })
-                    .collect()
-            },
-        );
         let res = quote! {
             pub async fn build(self) -> BotResult<#returntype> {
-                self.bot.#name( #( #r self.#typenames ),* ).await
+                self.bot.#name( #( self.#typenames ),* ).await
             }
         };
 
@@ -182,7 +165,7 @@ impl<'a> GenerateMethods<'a> {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .map(|f| get_field_name(f))
+            .map(get_field_name)
             .map(|f| {
                 (
                     format_ident!("{}", f).to_token_stream(),
@@ -191,7 +174,7 @@ impl<'a> GenerateMethods<'a> {
             });
         let types = method.fields.as_deref().unwrap_or_default().iter();
         let fields = names.zip(types).map(|((fieldname, getter), f)| {
-            let fieldtype = if is_inputfile(&f) {
+            let fieldtype = if is_inputfile(f) {
                 quote! { FileData }
             } else if is_str_field(f) {
                 quote! { &'a str }
@@ -203,7 +186,7 @@ impl<'a> GenerateMethods<'a> {
                     .unwrap()
                     .to_token_stream()
             };
-            let comment = f.description.into_comment();
+            let comment = f.description.comment();
             let fieldtype = if is_chatid(&f.types) {
                 quote! {  V }
             } else {
@@ -230,6 +213,7 @@ impl<'a> GenerateMethods<'a> {
             let setter = if should_wrap(&f.types) {
                 quote! {
                     #comment
+                    #[allow(clippy::needless_lifetimes)]
                     pub fn #fieldname<T>(mut self, #fieldname: T) -> Self
                         where T: Into<#fieldtype>
                     {
@@ -240,6 +224,7 @@ impl<'a> GenerateMethods<'a> {
             } else {
                 quote! {
                     #comment
+                    #[allow(clippy::needless_lifetimes)]
                     pub fn #fieldname(mut self, #fieldname: #fieldtype) -> Self
                     {
                         self.#fieldname = #some;
@@ -249,8 +234,7 @@ impl<'a> GenerateMethods<'a> {
             };
             quote! {
                 #setter
-
-
+                #[allow(clippy::needless_lifetimes)]
                 pub fn #getter(&'a self) -> &'a #get_some {
                     &self.#fieldname
                 }
@@ -431,7 +415,7 @@ impl<'a> GenerateMethods<'a> {
 
         quote! {
             impl #generic #structname #generic_struct {
-                #[allow(dead_code)]
+                #[allow(clippy::let_and_return, dead_code)]
                 fn get_form(self, form: Form) -> Form {
                     #( #json_value )*
                     #( #native_value )*
@@ -461,7 +445,7 @@ impl<'a> GenerateMethods<'a> {
                 }
             });
             let types = fields.iter().map(|f| {
-                if is_json(&f) || is_inputfile(&f) {
+                if is_json(f) || is_inputfile(f) {
                     let res = quote! {
                         String
                     };
@@ -523,27 +507,27 @@ impl<'a> GenerateMethods<'a> {
         let structname = get_type_name_str(&method.name);
         let structname = format_ident!("{}Opts", structname);
         let res = if let Some(fields) = &method.fields {
-            if fields.len() == 0 {
+            if fields.is_empty() {
                 quote!()
             } else {
                 let typenames = fields
                     .iter()
-                    .map(|f| get_field_name(f))
+                    .map(get_field_name)
                     .map(|f| format_ident!("{}", f));
                 let vars = fields.iter().map(|f| {
                     let name = get_field_name(f);
                     let name = format_ident!("{}", name);
-                    if is_inputfile(&f) {
+                    if is_inputfile(f) {
                         let json_name = format_ident!("{}_json", f.name);
                         quote! {
-                            #json_name
+                            : #json_name
                         }
-                    } else if is_json(&f) {
+                    } else if is_json(f) {
                         if f.required {
-                            quote! { serde_json::to_string(&#name)? }
+                            quote! { : serde_json::to_string(&#name)? }
                         } else {
                             quote! {
-                                if let Some(#name) = #name {
+                                : if let Some(#name) = #name {
                                     Some(serde_json::to_string(&#name)?)
                                 } else {
                                     None
@@ -551,14 +535,14 @@ impl<'a> GenerateMethods<'a> {
                             }
                         }
                     } else {
-                        name.to_token_stream()
+                        quote!()
                     }
                 });
 
                 quote! {
                    let form = #structname {
                         #(
-                            #typenames : #vars
+                            #typenames #vars
                         ),*
                     };
                 }
@@ -575,10 +559,10 @@ impl<'a> GenerateMethods<'a> {
         if let Some(fieldlist) = method
             .fields
             .as_ref()
-            .map(|v| v.iter().filter(|f| is_inputfile(&f)))
+            .map(|v| v.iter().filter(|f| is_inputfile(f)))
         {
             let fieldlist = fieldlist.collect::<Vec<&Field>>();
-            let res = if fieldlist.len() > 0 {
+            let res = if !fieldlist.is_empty() {
                 quote! { let data = Form::new(); }
             } else {
                 quote!()
@@ -590,13 +574,13 @@ impl<'a> GenerateMethods<'a> {
                 if field.required {
                     quote! {
                        // let inputfile = #typename.to_inputfile(#name.to_owned());
-                        let (data, #json_name) = #typename.to_form(data, #name.to_owned())?;
+                        let (data, #json_name) = #typename.convert_form(data, #name.to_owned())?;
                     }
                 } else {
                     quote! {
                         let (data, #json_name) = if let Some(#typename) = #typename {
                       //      let inputfile = #typename.to_inputfile(#name.to_owned());
-                            let (data, #json_name) = #typename.to_form(data, #name.to_owned())?;
+                            let (data, #json_name) = #typename.convert_form(data, #name.to_owned())?;
                             (data, Some(#json_name))
                         } else {
                             (data, None)
@@ -622,8 +606,8 @@ impl<'a> GenerateMethods<'a> {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .fold(false, |b, f| if is_inputfile(&f) { true } else { b });
-        if method.fields.as_deref().unwrap_or_default().len() == 0 {
+            .fold(false, |b, f| if is_inputfile(f) { true } else { b });
+        if method.fields.as_deref().unwrap_or_default().is_empty() {
             quote! {
                 self.post_empty(#endpoint).await?
             }
@@ -655,7 +639,7 @@ impl<'a> GenerateMethods<'a> {
         let instantiate = self.instantiate_urlencoding_struct(method)?;
         let file_handler = self.generate_file_handler(method);
         let post = self.generate_post(method);
-        let comment = method.description.concat().into_comment();
+        let comment = method.description.concat().comment();
         let generic = if method
             .fields
             .as_ref()
@@ -668,6 +652,7 @@ impl<'a> GenerateMethods<'a> {
         };
 
         let res = quote! {
+            #[allow(clippy::too_many_arguments)]
             #comment
             pub async fn #fn_name <'a #generic> (&self, #( #typenames: #types ),*) -> BotResult<#returntype>{
                 #file_handler
@@ -694,22 +679,19 @@ impl<'a> GenerateMethods<'a> {
 
         let (typenames, types, generics) = self.method_params_req(method, true);
 
-        let nones = method.fields.as_ref().map_or_else(
-            || Vec::new(),
-            |f| {
-                f.iter()
-                    .filter(|f| !f.required)
-                    .map(|f| {
-                        let name = get_field_name(f);
-                        let name = format_ident!("{}", name);
+        let nones = method.fields.as_ref().map_or_else(Vec::new, |f| {
+            f.iter()
+                .filter(|f| !f.required)
+                .map(|f| {
+                    let name = get_field_name(f);
+                    let name = format_ident!("{}", name);
 
-                        quote! {
-                            #name: None
-                        }
-                    })
-                    .collect()
-            },
-        );
+                    quote! {
+                        #name: None
+                    }
+                })
+                .collect()
+        });
 
         let generic = if method
             .fields
@@ -721,16 +703,29 @@ impl<'a> GenerateMethods<'a> {
         } else {
             quote! { , V }
         };
-
+        let intos = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .filter(|m| m.required)
+            .zip(typenames.iter())
+            .map(|(v, t)| {
+                if !should_wrap(&v.types) {
+                    quote! {}
+                } else {
+                    quote!( : #t .into() )
+                }
+            });
         let types = types.iter().map(|v| quote! { #v });
-
-        let comment = method.description.concat().into_comment();
+        let comment = method.description.concat().comment();
         let res = quote! {
+            #[allow(clippy::needless_lifetimes, clippy::too_many_arguments)]
             #comment
             pub fn #fn_name <'a #generic,  #( #types ),*> (&'a self, #( #typenames: #generics ),*) -> #returntype<'a #generic> {
                 #returntype {
                     bot: self,
-                    #( #typenames: #typenames .into() , )*
+                    #( #typenames #intos , )*
                     #( #nones ),*
                 }
             }
@@ -762,7 +757,7 @@ impl<'a> GenerateMethods<'a> {
         } else {
             let key = types
                 .iter()
-                .map(|t| get_type_name_str(t))
+                .map(get_type_name_str)
                 .collect::<Vec<String>>()
                 .join("");
             let multitypes = self.multitypes.read().expect("failed to lock read access");
@@ -779,7 +774,7 @@ impl<'a> GenerateMethods<'a> {
             .spec
             .methods
             .values()
-            .map(|m| self.generate_method(&m).unwrap());
+            .map(|m| self.generate_method(m).unwrap());
 
         let buildermethods = self
             .spec

@@ -48,7 +48,7 @@ impl Response {
         ResponseFlood {
             ok: self.ok,
             result: self.result.clone(),
-            error_code: self.error_code.clone(),
+            error_code: self.error_code,
             description: self.description.clone(),
             parameters: self.parameters.clone(),
         }
@@ -83,7 +83,7 @@ impl ApiError {
 
     /// Get the telegram api response if it exists, None if this error is a
     /// non-telegram error
-    pub fn get_response<'a>(&'a self) -> Option<&'a Response> {
+    pub fn get_response(&self) -> Option<&'_ Response> {
         if let ErrResponse::Response(ref response) = self.0 {
             Some(response)
         } else {
@@ -118,7 +118,7 @@ impl std::fmt::Display for ApiError {
             ErrResponse::Response(Response {
                 description: Some(ref d),
                 ..
-            }) => f.write_str(&d)?,
+            }) => f.write_str(d)?,
             ErrResponse::Response(Response { error_code, .. }) => {
                 f.write_str(&error_code.unwrap_or(-1).to_string())?
             }

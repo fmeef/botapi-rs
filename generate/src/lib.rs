@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    rc::Rc,
     sync::{Arc, RwLock},
 };
 
@@ -50,7 +51,7 @@ impl Generate {
     }
 
     pub fn generate_methods(&self) -> Result<String> {
-        let generate_methods = Arc::new(methods::GenerateMethods::new(
+        let generate_methods = Rc::new(methods::GenerateMethods::new(
             Arc::clone(&self.spec),
             Arc::clone(&self.multitypes),
         ));
