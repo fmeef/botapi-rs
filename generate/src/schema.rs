@@ -8,6 +8,8 @@ use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 
+use crate::util::is_primative;
+
 #[cfg(test)]
 mod tests {
     use super::{ApxFeedbackArcSet, Spec, Type};
@@ -248,6 +250,7 @@ pub(crate) struct Spec {
 pub(crate) struct Method {
     pub(crate) name: String,
     pub(crate) href: String,
+    #[serde(default)]
     pub(crate) description: Vec<String>,
     pub(crate) returns: Vec<String>,
     pub(crate) fields: Option<Vec<Field>>,
@@ -259,6 +262,7 @@ pub(crate) struct Method {
 pub(crate) struct Type {
     pub(crate) name: String,
     pub(crate) href: String,
+    #[serde(default)]
     pub(crate) description: Vec<String>,
     pub(crate) fields: Option<Vec<Field>>,
     pub(crate) subtypes: Option<Vec<String>>,
@@ -272,7 +276,7 @@ pub(crate) struct Field {
     pub(crate) name: String,
     pub(crate) types: Vec<String>,
     pub(crate) required: bool,
-    pub(crate) description: String,
+    pub(crate) description: Option<String>,
 }
 
 impl Type {
@@ -367,6 +371,9 @@ impl Spec {
 
     /// Check if a field (by field name) should be Box<T>
     pub(crate) fn check_parent<T: AsRef<str>>(&self, parent: &Type, name: &[T]) -> bool {
+        if parent.name == "Update" && !is_primative(name) {
+            return true;
+        }
         name.iter()
             .filter_map(|v| self.get_type(v))
             .flat_map(|v| {

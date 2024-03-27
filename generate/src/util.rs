@@ -178,6 +178,7 @@ impl<'a> ChooseType<'a> {
             false,
             false,
             no_wrap,
+            false,
         )
     }
 
@@ -200,6 +201,31 @@ impl<'a> ChooseType<'a> {
             None::<Box<dyn FnOnce() -> TokenStream>>,
             true,
             owned,
+            true,
+            false,
+        )
+    }
+
+    pub(crate) fn choose_type_force_box<T>(
+        &self,
+        types: &[String],
+        parent: Option<&Type>,
+        name: &T,
+        optional: bool,
+        owned: bool,
+    ) -> Result<TokenStream>
+    where
+        T: AsRef<str>,
+    {
+        self.choose_type_private(
+            types,
+            parent,
+            name,
+            optional,
+            None::<Box<dyn FnOnce() -> TokenStream>>,
+            true,
+            owned,
+            false,
             true,
         )
     }
@@ -224,6 +250,7 @@ impl<'a> ChooseType<'a> {
             true,
             owned,
             true,
+            false,
         )
     }
 
@@ -248,6 +275,7 @@ impl<'a> ChooseType<'a> {
             false,
             false,
             true,
+            false,
         )
     }
 
@@ -265,6 +293,7 @@ impl<'a> ChooseType<'a> {
         unbox: bool,
         owned: bool,
         no_wrap: bool,
+        mut force_box: bool,
     ) -> Result<TokenStream>
     where
         T: AsRef<str>,
@@ -273,7 +302,9 @@ impl<'a> ChooseType<'a> {
         let is_media = parent.map(|t| t.is_media()).unwrap_or(false);
         let nested = is_array(&types[0]);
         let primative = is_primative(&[type_without_array(&types[0])]) && !owned;
-
+        if primative {
+            force_box = false;
+        }
         let json = is_json_types_internal(&[type_without_array(&types[0])]);
         let opts = TypeChooserOpts {
             types,
@@ -347,7 +378,7 @@ impl<'a> ChooseType<'a> {
             t
         };
 
-        let t = if checked && !(is_media && name.as_ref() == "media") && !unbox {
+        let t = if (checked && !(is_media && name.as_ref() == "media") && !unbox) || force_box {
             quote! {
                 Box<#t>
             }
@@ -361,7 +392,7 @@ impl<'a> ChooseType<'a> {
             && !is_inputfile_types(types)
             && name.as_ref() != "type"
         {
-            if checked && !(is_media && name.as_ref() == "media") && !unbox {
+            if (checked && !(is_media && name.as_ref() == "media") && !unbox) || force_box {
                 quote! { BoxWrapper<#t> }
             } else {
                 quote! { BoxWrapper<Unbox<#t>> }
@@ -455,15 +486,24 @@ pub(crate) trait IntoComment {
     fn comment(&self) -> TokenStream;
 }
 
-impl<T> IntoComment for T
-where
-    T: AsRef<str>,
-{
+impl IntoComment for String {
     fn comment(&self) -> TokenStream {
-        let comment = self.as_ref();
         quote! {
             #[allow(rustdoc::invalid_html_tags)]
-            #[doc = #comment ]
+            #[doc = #self ]
+        }
+    }
+}
+
+impl IntoComment for Option<String> {
+    fn comment(&self) -> TokenStream {
+        if let Some(comment) = self {
+            quote! {
+                #[allow(rustdoc::invalid_html_tags)]
+                #[doc = #comment ]
+            }
+        } else {
+            quote! {}
         }
     }
 }

@@ -7,7 +7,7 @@ use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 
 pub use reqwest::multipart::Part;
-static TELEGRAM_API: &str = "https://api.telegram.org";
+//static TELEGRAM_API: &str = "https://api.telegram.org";
 
 /// Hardcoded serde_json "Response" from telegram bot api. We can't genearate this so declare it
 /// here
@@ -63,6 +63,7 @@ pub type BotResult<T> = Result<T, ApiError>;
 struct BotState {
     client: reqwest::Client,
     token: String,
+    api: String,
     auto_wait: bool,
 }
 
@@ -145,8 +146,49 @@ impl Default for Response {
     }
 }
 
+pub struct BotBuilder(BotState);
+
+impl BotBuilder {
+    /// Create a new builder with the default api url and a given token
+    pub fn new<T>(token: T) -> Result<Self>
+    where
+        T: Into<String>,
+    {
+        let client = reqwest::ClientBuilder::new().https_only(true).build()?;
+
+        Ok(Self(BotState {
+            client,
+            token: token.into(),
+            api: "api.telegram.org".to_owned(),
+            auto_wait: true,
+        }))
+    }
+
+    /// Change the default api url from api.teleegram.org to a custom url
+    pub fn api<T>(mut self, api: T) -> Self
+    where
+        T: Into<String>,
+    {
+        self.0.api = api.into();
+        self
+    }
+
+    /// If true, set the bot to automatically retry ratelimited api calls
+    /// when the retry_after parameter is detected
+    pub fn auto_wait(mut self, auto_wait: bool) -> Self {
+        self.0.auto_wait = auto_wait;
+        self
+    }
+
+    /// Create a new bot instance from this builder
+    pub fn build(self) -> Bot {
+        Bot(Arc::new(self.0))
+    }
+}
+
 impl Bot {
     /// Instantiate bot using token optionally enabling autoretry on flood wait
+    #[deprecated]
     pub fn new_auto_wait<T>(token: T, auto_wait: bool) -> Result<Self>
     where
         T: Into<String>,
@@ -155,11 +197,14 @@ impl Bot {
         Ok(Self(Arc::new(BotState {
             client,
             token: token.into(),
+            api: "api.telegram.org".to_owned(),
             auto_wait,
         })))
     }
 
     /// Instantiate bot using token
+    #[deprecated]
+    #[allow(deprecated)]
     pub fn new<T>(token: T) -> Result<Self>
     where
         T: Into<String>,
@@ -169,7 +214,7 @@ impl Bot {
 
     /// generate an api endpoint from bot token
     fn get_endpoint(&self, endpoint: &str) -> String {
-        format!("{}/bot{}/{}", TELEGRAM_API, self.0.token, endpoint)
+        format!("{}/bot{}/{}", self.0.api, self.0.token, endpoint)
     }
 
     /// HTTP post helper with x-www-form-urlencoded body

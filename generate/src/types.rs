@@ -97,10 +97,9 @@ impl<'a> GenerateTypes<'a> {
                             .flat_map(|v| v.iter())
                             .filter(|field| field.name == "status")
                             .map(|v| {
-                                println!("field {}", v.description);
                                 let d = escape(REGEX_STATUS.as_str());
                                 REGEX_STATUS
-                                    .find(&v.description)
+                                    .find(v.description.as_deref().unwrap_or(""))
                                     .map(|v| &v.as_str()[1..v.as_str().len() - 1])
                                     .unwrap_or_else(|| panic!("regex {} failed", d))
                             })
@@ -166,15 +165,25 @@ impl<'a> GenerateTypes<'a> {
         })
     }
 
-    fn get_field_names_ext<'b>(&'b self, t: &'b Type) -> impl Iterator<Item = TokenStream> + 'b {
+    fn get_field_names_ext<'b>(
+        &'b self,
+        t: &'b Type,
+        unbox: bool,
+    ) -> impl Iterator<Item = TokenStream> + 'b {
         t.pretty_fields()
             .filter(|f| f.name != "update_id")
             .map(move |f| {
                 let fieldname = get_type_name_str(&f.name);
-                let choose = self
-                    .choose_type
-                    .choose_type(f.types.as_slice(), Some(t), &f.name, false, true)
-                    .unwrap();
+
+                let choose = if unbox {
+                    self.choose_type
+                        .choose_type_unbox(f.types.as_slice(), Some(t), &f.name, false, true)
+                        .unwrap()
+                } else {
+                    self.choose_type
+                        .choose_type(f.types.as_slice(), Some(t), &f.name, false, true)
+                        .unwrap()
+                };
                 let name = format_ident!("{}", fieldname);
                 quote! {
                     #name(#choose)
@@ -233,7 +242,7 @@ impl<'a> GenerateTypes<'a> {
     /// Generate a special helper type to treat "Update" as an enum
     fn generate_update_ext(&self, t: &Type) -> TokenStream {
         if t.name == UPDATE {
-            let fieldnames = self.get_field_names_ext(t);
+            let fieldnames = self.get_field_names_ext(t, true);
             let methods = self
                 .get_common_methods_recursive_ext(t)
                 .iter()
@@ -1099,8 +1108,9 @@ impl<'a> GenerateTypes<'a> {
                         || quote!(),
                         |f| {
                             let search = "must be ";
-                            let typename = if let Some(index) = f.description.find(search) {
-                                &f.description[index + search.len()..]
+                            let description = f.description.as_deref().unwrap_or("");
+                            let typename = if let Some(index) = description.find(search) {
+                                &description[index + search.len()..]
                             } else {
                                 &t.name
                             };
@@ -1739,6 +1749,8 @@ impl<'a> GenerateTypes<'a> {
                         println!("{}", ser);
                         let _: #name = serde_json::from_str(&ser).unwrap();
                     }
+
+
                 }
             });
 
@@ -1789,11 +1801,29 @@ impl<'a> GenerateTypes<'a> {
                 quote! { pub #name }
             }
         });
-        let fieldtypes = t.pretty_fields().map(|v| {
-            self.choose_type
-                .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, false)
-                .ok()
-        });
+        let fieldtypes = if t.name == "Update" {
+            t.pretty_fields()
+                .filter_map(|v| {
+                    self.choose_type
+                        .choose_type_force_box(
+                            v.types.as_slice(),
+                            Some(t),
+                            &v.name,
+                            !v.required,
+                            false,
+                        )
+                        .ok()
+                })
+                .collect_vec()
+        } else {
+            t.pretty_fields()
+                .filter_map(|v| {
+                    self.choose_type
+                        .choose_type(v.types.as_slice(), Some(t), &v.name, !v.required, false)
+                        .ok()
+                })
+                .collect_vec()
+        };
 
         let comments = field_iter(t, |v| v.description.comment());
         let struct_comment = if serde_skip {

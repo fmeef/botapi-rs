@@ -1,11 +1,11 @@
 use anyhow::Result;
-use botapi::{bot::Bot, gen_types::FileData};
+use botapi::{bot::BotBuilder, gen_types::FileData};
 use reqwest::multipart::Part;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let token = std::env::var("TOKEN")?;
-    let bot = Bot::new(token)?;
+    let bot = BotBuilder::new(token)?.build();
     bot.delete_webhook(None).await?;
     let mut offset = 0;
     loop {
@@ -24,13 +24,10 @@ async fn main() -> Result<()> {
                     "chat_id {} offset {} message {}",
                     chat.get_id(),
                     offset,
-                    message
-                        .get_text()
-                        .clone()
-                        .map(|m| m.to_owned())
-                        .unwrap_or_default()
+                    message.get_text().map(|m| m.to_owned()).unwrap_or_default()
                 );
                 bot.send_document(
+                    None,
                     chat.get_id(),
                     None,
                     filedata,
