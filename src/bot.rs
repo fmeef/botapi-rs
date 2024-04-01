@@ -159,7 +159,7 @@ impl BotBuilder {
         Ok(Self(BotState {
             client,
             token: token.into(),
-            api: "api.telegram.org".to_owned(),
+            api: "https://api.telegram.org".to_owned(),
             auto_wait: true,
         }))
     }
@@ -197,7 +197,7 @@ impl Bot {
         Ok(Self(Arc::new(BotState {
             client,
             token: token.into(),
-            api: "api.telegram.org".to_owned(),
+            api: "https://api.telegram.org".to_owned(),
             auto_wait,
         })))
     }
