@@ -71,7 +71,6 @@ impl<'a> GenerateTypes<'a> {
                     #fromskip
                     #update
                     #from
-
                     #b
                 }
             } else if v.name == INPUT_FILE {
@@ -139,6 +138,8 @@ impl<'a> GenerateTypes<'a> {
         let uses = self.generate_use()?;
         let tests = self.generate_test();
         let chatid = self.generate_chat_enum();
+        let rhaihelpers = self.generate_rhai_helpers();
+        let froms = self.generate_from_wrapper();
         let res = quote! {
             #uses
             #chatid
@@ -146,6 +147,8 @@ impl<'a> GenerateTypes<'a> {
             #( #structs )*
             #( #impls )*
             #typeenums
+            #rhaihelpers
+            #froms
             #extra
             #tests
         };
@@ -160,6 +163,8 @@ impl<'a> GenerateTypes<'a> {
             use anyhow::{anyhow, Result};
             use reqwest::multipart::Form;
             use crate::bot::Part;
+            #[cfg(feature = "rhai")]
+            use rhai::{CustomType, TypeBuilder};
             use std::default::Default;
             // use std::borrow::Cow;
         })
@@ -185,7 +190,9 @@ impl<'a> GenerateTypes<'a> {
                         .unwrap()
                 };
                 let name = format_ident!("{}", fieldname);
+                let comment = f.description.comment();
                 quote! {
+                    #comment
                     #name(#choose)
                 }
             })
@@ -395,6 +402,30 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    fn generate_from_wrapper(&self) -> TokenStream {
+        let froms = self.spec.types.values().map(|v| {
+            let name = format_ident!("{}", v.name);
+            quote! {
+                impl From<BoxWrapper<Unbox<#name>>> for #name {
+                    fn from(t: BoxWrapper<Unbox<#name>>) -> Self {
+                        t.consume()
+                    }
+                }
+
+
+                impl From<BoxWrapper<Box<#name>>> for #name {
+                    fn from(t: BoxWrapper<Box<#name>>) -> Self {
+                        t.consume()
+                    }
+                }
+            }
+        });
+
+        quote! {
+            #( #froms )*
+        }
+    }
+
     fn generate_from_skip(&self, t: &Type) -> TokenStream {
         let skipname = format_ident!("NoSkip{}", t.name);
         let name = format_ident!("{}", t.name);
@@ -415,21 +446,6 @@ impl<'a> GenerateTypes<'a> {
         });
 
         quote! {
-
-           impl From<BoxWrapper<Unbox<#name>>> for #name {
-               fn from(t: BoxWrapper<Unbox<#name>>) -> Self {
-                   t.consume()
-               }
-           }
-
-
-           impl From<BoxWrapper<Box<#name>>> for #name {
-               fn from(t: BoxWrapper<Box<#name>>) -> Self {
-                   t.consume()
-               }
-           }
-
-
            impl From<#skipname> for #name {
                fn from(t: #skipname) -> Self {
                     Self {
@@ -766,7 +782,7 @@ impl<'a> GenerateTypes<'a> {
         } else {
             quote! {
                #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
-               pub struct #name();
+               pub struct #name {}
             }
         };
         Ok(e)
@@ -828,11 +844,218 @@ impl<'a> GenerateTypes<'a> {
             }
         } else {
             quote! {
-                 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
-                pub struct #name();
+                #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
+                pub struct #name{}
             }
         };
         Ok(e)
+    }
+
+    fn generate_rhai_module(&self, t: &str) -> TokenStream {
+        let name = format_ident!("{}", t);
+        let modname = format_ident!("{}Module", t);
+        let clone = if is_primative(&[t]) || ["i64", "f64", "bool"].contains(&t) {
+            quote! { *x }
+        } else {
+            quote! { x.clone() }
+        };
+        quote! {
+            #[export_module]
+            #[warn(non_snake_case)]
+            #[allow(dead_code, non_snake_case, non_upper_case_globals)]
+            mod #modname {
+
+                /// `Option::None` with no inner data
+                pub const None: Option<#name> = Option::None;
+
+                /// `Option::Some`
+                pub fn Some(value: #name) -> Option<#name> {
+                    Option::Some(value)
+                }
+
+                /// Return the current variant of `MyEnum`.
+                #[rhai_fn(global, get = "enum_type", pure)]
+                pub fn get_type(my_enum: &mut Option<#name>) -> String {
+                    match my_enum {
+                        Option::None => "None".to_string(),
+                        Option::Some(_) => "Some".to_string(),
+                    }
+                }
+
+                /// Return the inner value.
+                #[rhai_fn(global, get = "value", pure)]
+                pub fn get_value(my_enum: &mut Option<#name>) -> Dynamic {
+                    match my_enum {
+                        Option::None => Dynamic::UNIT,
+                        Option::Some(x) => Dynamic::from( #clone ),
+                    }
+                }
+
+                // Printing
+                #[rhai_fn(global, name = "to_string", pure)]
+                pub fn to_string(my_enum: &mut Option<#name>) -> String {
+                    format!("{my_enum:?}")
+                }
+
+                #[rhai_fn(global, name = "to_debug", pure)]
+                pub fn to_debug(my_enum: &mut Option<#name>) -> String {
+                    format!("{:?}", my_enum)
+                }
+            }
+        }
+    }
+
+    fn generate_customtype_impl(&self, t: &str) -> TokenStream {
+        if let Some(t) = self.spec.get_type(t) {
+            if should_generate_customtype(t) {
+                let name = format_ident!("{}", t.name);
+                let getters = t.pretty_fields().map(|f| {
+                    //  let comment = f.description.comment();
+                    let name = get_field_name(f);
+                    // let fieldname = format_ident!("get_{}", name);
+                    let fieldname_ref = format_ident!("rhai_get_{}", name);
+                    quote! {
+                         builder.with_get(#name, Self:: #fieldname_ref);
+                    }
+                });
+                quote! {
+                    #[cfg(feature = "rhai")]
+                    #[allow(unused_mut)]
+                    impl rhai::CustomType for #name {
+                        fn build(mut builder: rhai::TypeBuilder<Self>) {
+                           #( #getters )*
+                           builder.on_debug(|t| format!("{:?}", t));
+                           drop(builder);
+                       }
+                    }
+                }
+            } else {
+                quote!()
+            }
+        } else {
+            quote!()
+        }
+    }
+
+    fn generate_setup_global_impl(&self) -> TokenStream {
+        let impls = self
+            .spec
+            .iter_types()
+            .filter(|t| should_register(t))
+            .map(|t| {
+                let name = type_mapper(&t.name);
+                let name = format_ident!("{}", name);
+                quote! {
+                     #name::setup_rhai(engine);
+                }
+            });
+        quote! {
+            pub fn setup_all_rhai(engine: &mut rhai::Engine)  {
+                #( #impls )*
+            }
+        }
+    }
+
+    fn generate_setup_rhai_impl(&self, typename: &str) -> TokenStream {
+        if let Some(t) = self.spec.get_type(typename) {
+            if should_register(t) {
+                let name = format_ident!("{}", typename);
+                let recursive_types = self
+                    .spec
+                    .recursive_fields(t)
+                    .into_iter()
+                    .map(|t| {
+                        if let Some(t) = self.spec.get_type(&t) {
+                            let v = type_mapper(&t.name);
+                            let modname = format_ident!("{}Module", v);
+                            let name = format_ident!("{}", v);
+                            let sname = format!("Option<{}>", v);
+                            let build = if should_generate_customtype(t) {
+                                quote! {
+                                    .build_type::<#name>()
+                                }
+                            } else {
+                                quote!()
+                            };
+                             quote! {
+                                engine
+                                    .register_type_with_name::<Option<#name>>(#sname)
+                                    #build
+                                    .register_static_module(#sname, exported_module!(#modname).into());
+                             }
+                            } else {
+                                let v = type_mapper(&t);
+                                let modname = format_ident!("{}Module", v);
+                                let name = format_ident!("{}", v);
+                                let sname = format!("Option<{}>", v);
+
+                                quote! {
+                                    engine
+                                        .register_type_with_name::<Option<#name>>(#sname)
+                                        .register_static_module(#sname, exported_module!(#modname).into());
+                                }
+                            }
+                    })
+                    .collect_vec();
+                let custom = self.generate_customtype_impl(typename);
+                let impls = [quote! { #name }].into_iter().map(|name| {
+                    quote! {
+                    #[cfg(feature = "rhai")]
+                    impl SetupRhai for #name {
+                        fn setup_rhai(engine: &mut rhai::Engine) {
+                            engine.build_type::<#name>();
+                           #( #recursive_types )*
+                        }
+                    }
+                    #custom
+                    }
+                });
+                quote! {
+                    #( #impls )*
+                }
+            } else {
+                quote!()
+            }
+        } else {
+            quote!()
+        }
+    }
+
+    fn generate_rhai_helpers(&self) -> TokenStream {
+        let modules = ["i64", "f64", "String", "bool"];
+        let mods = self
+            .spec
+            .types
+            .keys()
+            .map(|v| v.as_str())
+            // .filter(|t| self.spec.get_type(t).map(should_register).unwrap_or(false))
+            .chain(modules.iter().copied())
+            .map(|v| self.generate_rhai_module(v));
+        let impls = self
+            .spec
+            .types
+            .keys()
+            .map(|v| v.as_str())
+            // .filter(|t| self.spec.get_type(t).map(should_register).unwrap_or(false))
+            .chain(modules.iter().copied())
+            .map(|t| self.generate_setup_rhai_impl(t));
+        let glob = self.generate_setup_global_impl();
+        quote! {
+            #[cfg(feature = "rhai")]
+            pub mod rhai_helpers {
+                use rhai::{exported_module, export_module, plugin::*};
+                use super::*;
+                pub trait SetupRhai {
+                    fn setup_rhai(engine: &mut rhai::Engine);
+                }
+
+                #( #mods )*
+
+                #( #impls )*
+
+                #glob
+            }
+        }
     }
 
     /// For the "InputFile" type genenerate helpers for working with uploaded files and file
@@ -842,6 +1065,7 @@ impl<'a> GenerateTypes<'a> {
         quote! {
 
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+            #[cfg_attr(feature = "rhai", derive(rhai::CustomType))]
             pub struct FileBytes {
                 pub(crate) name: String,
                 #[serde(skip, default)]
@@ -873,7 +1097,6 @@ impl<'a> GenerateTypes<'a> {
             /// Generic wrapper around a type on the stack, without a Box\<T\>
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
             pub struct Unbox<T>(T);
-
 
             /// Abstraction over Box\<T\> and Unbox\<T\>, essentially a smart pointer to data either on stack or heap
             #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Default)]
@@ -1045,7 +1268,7 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", traitname.as_ref());
         let trait_name = format_ident!("Trait{}", traitname.as_ref());
-        let functions = self.generate_impl_functions(supertype, false);
+        let functions = self.generate_impl_functions(supertype, false, false);
 
         let res = quote! {
             impl #trait_name for #typename {
@@ -1161,8 +1384,13 @@ impl<'a> GenerateTypes<'a> {
                 Some("String") => quote!(),
                 Some(v) => {
                     let v = format_ident!("{}", v);
+                    let c = if generics.is_empty() {
+                        quote!()
+                    } else {
+                        quote! { , }
+                    };
                     quote! {
-                        , tg_type: #v
+                      #c  tg_type: #v
                     }
                 }
                 _ => quote!(),
@@ -1189,7 +1417,7 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    fn generate_impl_functions(&self, t: &Type, public: bool) -> TokenStream {
+    fn generate_impl_functions(&self, t: &Type, public: bool, rhai: bool) -> TokenStream {
         let methods = t
             .pretty_fields()
             .map(|f| {
@@ -1198,6 +1426,7 @@ impl<'a> GenerateTypes<'a> {
                 // let fieldname = format_ident!("get_{}", name);
                 let fieldname_ref = format_ident!("get_{}", name);
                 let fieldname_set = format_ident!("set_{}", name);
+                let fieldname_rhai = format_ident!("rhai_get_{}", name);
                 let returnname = format_ident!("{}", name);
                 let primative = is_primative(&f.types);
                 let boxed = self.spec.check_parent(t, &f.types);
@@ -1322,8 +1551,51 @@ impl<'a> GenerateTypes<'a> {
                         })
                     }
                 };
+                let into = if is_primative(&f.types) {
+                    quote!()
+                } else if is_str_field(f) || is_inputfile(f)
+                ||  f.types.iter().any(|t| is_array(t) > 0)
+                || ! should_wrap(&f.types) || f.name == "type" {
+                    quote! { .clone() }
+                } else {
+                    quote! { .clone().into() }
+                };
 
-                if f.required {
+                let copied = if is_primative(&f.types) {
+                    quote! { .copied() }
+                } else {
+                    quote!()
+                };
+
+                let map = if is_primative(&f.types) {
+                    quote!()
+                } else if is_str_field(f) ||  f.types.iter().any(|t| is_array(t) > 0) || ! should_wrap(&f.types) {
+                    quote! { .cloned() }
+                } else {
+                  quote! { .map(|v| v #into )  }
+                };
+
+                let rhai_getters = if rhai {
+                    if f.required {
+                        quote! {
+                            #comment
+                            fn #fieldname_rhai(&mut self) -> #unbox_nowrap  {
+                                self.#returnname #into
+                            }
+                        }
+                    } else {
+                        quote! {
+                            #comment
+                            fn #fieldname_rhai(&mut self) -> Option<#unbox_nowrap>  {
+                                self.#returnname.as_ref() #map #copied
+                            }
+                        }
+                    }
+                } else {
+                    quote!()
+                };
+
+                let regular = if f.required {
                     quote! {
                         // #comment
                         // #public fn #fieldname<'a>(&'a self) -> #ret  {
@@ -1345,13 +1617,6 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     quote! {
-                        // #comment
-                        // #public fn #fieldname<'a>(&'a self) -> #ret {
-                        //     self.#returnname.as_ref().map(|v| {
-                        //         #vaccess
-                        //     })
-                        // }
-
                         #comment
                         #[allow(clippy::needless_lifetimes, clippy::option_as_ref_deref)]
                         #public fn #fieldname_ref<'a>(&'a self) -> #refret {
@@ -1365,6 +1630,11 @@ impl<'a> GenerateTypes<'a> {
                             self
                         }
                     }
+                };
+                quote! {
+                    #regular
+
+                    #rhai_getters
                 }
             })
             .collect_vec();
@@ -1592,7 +1862,7 @@ impl<'a> GenerateTypes<'a> {
             .ok_or_else(|| anyhow!("type not found"))?;
 
         let typename = format_ident!("{}", t.name);
-        let methods = self.generate_impl_functions(t, true);
+        let methods = self.generate_impl_functions(t, true, true);
         let form_generator = self.generate_inputmedia_getter(t)?;
         let inputmedia_generator = self.generate_inputfile_getter(t)?;
         let constructor = self.generate_constructor(name)?;
@@ -1755,7 +2025,7 @@ impl<'a> GenerateTypes<'a> {
             });
 
         quote! {
-            #[allow(unused_imports)]
+            #[cfg(test)]
             mod test {
                 use super::*;
                 use std::default::Default;
@@ -1825,7 +2095,6 @@ impl<'a> GenerateTypes<'a> {
                 .collect_vec()
         };
 
-        let comments = field_iter(t, |v| v.description.comment());
         let struct_comment = if serde_skip {
             t.description.concat().comment()
         } else {
@@ -1842,7 +2111,6 @@ impl<'a> GenerateTypes<'a> {
             #[derive(Serialize, Deserialize, Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct #typename {
                 #(
-                    #comments
                     #fieldnames: #fieldtypes
                 ),*
             }
@@ -1851,7 +2119,7 @@ impl<'a> GenerateTypes<'a> {
     }
 }
 
-#[allow(unused_imports)]
+#[cfg(test)]
 mod test {
     use super::*;
     use std::sync::{Arc, RwLock};

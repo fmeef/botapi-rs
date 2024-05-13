@@ -9,6 +9,7 @@ use anyhow::Result;
 use serde::Deserialize;
 
 use crate::util::is_primative;
+use crate::util::type_without_array;
 
 #[cfg(test)]
 mod tests {
@@ -338,6 +339,26 @@ impl Spec {
         }
 
         Ok(Some(types))
+    }
+
+    pub(crate) fn recursive_fields(&self, t: &Type) -> BTreeSet<String> {
+        let mut set = BTreeSet::new();
+        self.recursive_fields_priv(t, &mut set);
+        set
+    }
+
+    fn recursive_fields_priv(&self, t: &Type, fields: &mut BTreeSet<String>) {
+        for f in t.pretty_fields() {
+            for t in f.types.iter() {
+                let t = type_without_array(t);
+                if !fields.contains(t) {
+                    fields.insert(t.to_owned());
+                    if let Some(t) = self.get_type(t) {
+                        self.recursive_fields_priv(t, fields);
+                    }
+                }
+            }
+        }
     }
 
     /// Get a list of a type's subtypes, None if the type is nonexistent, Err if any of the

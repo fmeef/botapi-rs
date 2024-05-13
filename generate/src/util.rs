@@ -13,6 +13,16 @@ pub(crate) fn no_lifetime(f: &Field) -> bool {
     (l || is_primative(&[&f.types[0]])) && !is_chatid(&f.types)
 }
 
+pub(crate) fn should_generate_customtype(t: &Type) -> bool {
+    is_json_types_internal(&[&t.name])
+        && t.subtypes.as_ref().map(|v| v.is_empty()).unwrap_or(true)
+        && t.name.as_str() != "InputFile"
+}
+
+pub(crate) fn should_register(t: &Type) -> bool {
+    t.subtypes.as_ref().map(|v| v.is_empty()).unwrap_or(true) && t.name.as_str() != "InputFile"
+}
+
 impl<F> ChooserFn for F
 where
     F: for<'a, 'b, 'c> Fn(&'a TypeChooserOpts<'b, 'c>) -> String,
