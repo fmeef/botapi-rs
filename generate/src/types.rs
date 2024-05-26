@@ -229,11 +229,11 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
-            impl ToString for ChatHandle {
-                fn to_string(&self) -> String {
+            impl fmt::Display for ChatHandle {
+                fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                     match self {
-                        Self::Username(u) => u.to_string(),
-                        Self::ChatId(i) => i.to_string()
+                        Self::Username(u) => u.fmt(f),
+                        Self::ChatId(i) => i.fmt(f)
                     }
                 }
             }
@@ -1970,6 +1970,7 @@ impl<'a> GenerateTypes<'a> {
         // let into_tuple = self.generate_into_tuple(t, true, true);
 
         let res = quote! {
+            #[allow(dead_code)]
             trait #typename #supertraits {
                 // #into_tuple
                 #( #methods )*

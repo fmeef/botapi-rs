@@ -53,7 +53,7 @@ fn all_vertex_sets<'a>(
     match dataindex {
         v if v == data.len() => data.push(sets[setindex]),
         _ if dataindex > data.len() => panic!("overflow"),
-        _ => data[dataindex] = &sets[setindex],
+        _ => data[dataindex] = sets[setindex],
     }
 
     all_vertex_sets(sets, setindex + 1, size, dataindex + 1, data, out);
