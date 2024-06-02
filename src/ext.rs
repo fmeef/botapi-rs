@@ -40,17 +40,21 @@ impl LongPoller {
     ) -> Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>> {
         let s = stream! {
             loop {
-                let update = self.bot.get_updates(Some(self.offset), None, None, self.allowed_updates.as_ref()).await?;
-                let mut max = 0;
-                for update in update {
-                    let id = update.get_update_id();
-                    if id > max {
-                        max = id;
-                    }
-                    yield Ok(update.into());
-                }
+                match self.bot.get_updates(Some(self.offset), None, None, self.allowed_updates.as_ref()).await {
+                    Ok(update) => {
+                        let mut max = 0;
+                        for update in update {
+                            let id = update.get_update_id();
+                            if id > max {
+                                max = id;
+                            }
+                            yield Ok(update.into());
+                        }
 
-                self.offset = max + 1;
+                        self.offset = max + 1;
+                    }
+                    Err(err) => log::warn!("failed to fetch update {}", err)
+                }
             }
         };
 
