@@ -1,7 +1,9 @@
+use hyper_util::rt::TokioIo;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
+use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::SendError;
 use uuid::Uuid;
@@ -13,10 +15,10 @@ use anyhow::anyhow;
 use anyhow::Result;
 use async_stream::stream;
 use futures_core::Stream;
-use hyper::body::to_bytes;
-use hyper::server::conn::AddrStream;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server};
+use http_body_util::{BodyExt, Limited};
+use hyper::body::Incoming;
+use hyper::service::service_fn;
+use hyper::{Request, Response, StatusCode};
 
 /// Helper for fetching updates via long polling.
 pub struct LongPoller {
@@ -59,6 +61,20 @@ impl LongPoller {
         };
 
         Box::pin(s)
+    }
+}
+
+#[derive(Clone)]
+/// An Executor that uses the tokio runtime.
+pub struct TokioExecutor;
+
+impl<F> hyper::rt::Executor<F> for TokioExecutor
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    fn execute(&self, fut: F) {
+        tokio::task::spawn(fut);
     }
 }
 
@@ -144,31 +160,49 @@ impl Webhook {
     ) -> Result<Pin<Box<impl Stream<Item = Result<UpdateExt, ApiError>>>>, ApiError> {
         let (tx, mut rx) = mpsc::channel(128);
         let cookie = self.cookie;
-        let svc = make_service_fn(move |_: &AddrStream| {
-            let tx = tx.clone();
-            async move {
-                Ok::<_, ApiError>(service_fn(move |body: Request<Body>| {
+
+        let listener = TcpListener::bind(self.addr).await.map_err(|e| anyhow!(e))?;
+
+        let fut = tokio::spawn(async move {
+            loop {
+                let tx = tx.clone();
+                let svc = service_fn(move |body: Request<Incoming>| {
                     let tx = tx.clone();
                     async move {
                         if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
                             if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
-                                let json = to_bytes(body).await.map_err(|e| anyhow!(e))?;
-                                if let Ok(update) = serde_json::from_slice::<Update>(&json) {
+                                let body = Limited::new(body, 1024 * 1024);
+                                if let Ok(update) = serde_json::from_slice::<Update>(
+                                    &body.collect().await.map_err(|e| anyhow!(e))?.to_bytes(),
+                                ) {
                                     tx.send(update.into())
                                         .await
                                         .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
                                 }
                             }
                         }
-                        Ok::<_, ApiError>(Response::new(Body::from("")))
+                        Ok::<_, ApiError>(
+                            Response::builder()
+                                .status(StatusCode::OK)
+                                .body("".to_owned())
+                                .map_err(|e| anyhow!(e))?,
+                        )
                     }
-                }))
+                });
+                if let Ok((stream, _)) = listener.accept().await {
+                    let io = TokioIo::new(stream);
+
+                    tokio::task::spawn(async move {
+                        if let Err(err) = hyper::server::conn::http1::Builder::new()
+                            .serve_connection(io, svc)
+                            .await
+                        {
+                            log::warn!("connection error {}", err);
+                        }
+                    });
+                }
             }
         });
-
-        let server = Server::bind(&self.addr).serve(svc);
-
-        let fut = tokio::task::spawn(server);
 
         if let Err(err) = self.setup().await {
             self.teardown().await?;
@@ -179,11 +213,11 @@ impl Webhook {
             while let Some(update) = rx.recv().await {
                 yield Ok(update);
             }
+
+            self.teardown().await?;
             if let Err(err) = fut.await {
                 yield Err(anyhow!(err).into());
             }
-
-            self.teardown().await?;
         };
 
         Ok(Box::pin(s))
