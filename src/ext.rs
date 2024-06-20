@@ -171,7 +171,7 @@ impl Webhook {
                     async move {
                         if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
                             if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
-                                let body = Limited::new(body, 1024 * 1024);
+                                let body = Limited::new(body, 1024 * 1024 * 10);
                                 if let Ok(update) = serde_json::from_slice::<Update>(
                                     &body.collect().await.map_err(|e| anyhow!(e))?.to_bytes(),
                                 ) {
