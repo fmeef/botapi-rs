@@ -16,7 +16,7 @@ use anyhow::Result;
 use async_stream::stream;
 use futures_core::Stream;
 use http_body_util::{BodyExt, Limited};
-use hyper::body::Incoming;
+use hyper::body::{Buf, Incoming};
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 
@@ -163,32 +163,31 @@ impl Webhook {
 
         let listener = TcpListener::bind(self.addr).await.map_err(|e| anyhow!(e))?;
 
+        let svc = service_fn(move |body: Request<Incoming>| {
+            let tx = tx.clone();
+            async move {
+                if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
+                    if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
+                        let body = Limited::new(body, 1024 * 1024 * 10);
+                        let body = body.collect().await.map_err(|e| anyhow!(e))?.aggregate();
+                        if let Ok(update) = serde_json::from_reader::<_, Update>(body.reader()) {
+                            tx.send(update.into())
+                                .await
+                                .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
+                        }
+                    }
+                }
+                Ok::<_, ApiError>(
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .body("".to_owned())
+                        .map_err(|e| anyhow!(e))?,
+                )
+            }
+        });
         let fut = tokio::spawn(async move {
             loop {
-                let tx = tx.clone();
-                let svc = service_fn(move |body: Request<Incoming>| {
-                    let tx = tx.clone();
-                    async move {
-                        if let Some(token) = body.headers().get("X-Telegram-Bot-Api-Secret-Token") {
-                            if token.to_str().unwrap_or("") == cookie.to_string().as_str() {
-                                let body = Limited::new(body, 1024 * 1024 * 10);
-                                if let Ok(update) = serde_json::from_slice::<Update>(
-                                    &body.collect().await.map_err(|e| anyhow!(e))?.to_bytes(),
-                                ) {
-                                    tx.send(update.into())
-                                        .await
-                                        .map_err(|e: SendError<UpdateExt>| anyhow!(e))?;
-                                }
-                            }
-                        }
-                        Ok::<_, ApiError>(
-                            Response::builder()
-                                .status(StatusCode::OK)
-                                .body("".to_owned())
-                                .map_err(|e| anyhow!(e))?,
-                        )
-                    }
-                });
+                let svc = svc.clone();
                 if let Ok((stream, _)) = listener.accept().await {
                     let io = TokioIo::new(stream);
 
