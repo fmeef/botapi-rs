@@ -1934,7 +1934,7 @@ impl<'a> GenerateTypes<'a> {
                 } else if primative {
                     unbox_nowrap.clone()
                 } else {
-                    quote! { &#unbox_nowrap }
+                    quote! { &'a #unbox_nowrap }
                 };
 
                 // let ret = if f.required {
