@@ -6,7 +6,7 @@ This library aims to go above and beyond just generating a http wrapper,
 mapping telegram types and methods more cleanly onto rust design patterns
 while maintaining low overhead and avoiding unnecessary clones or allocations.
 
-Methods take advantage of generic paremters, slices, and primative types whenever possible and all api types come with an easy to use builder pattern
+Methods take advantage of generic parameters, slices, and primative types whenever possible and all api types come with an easy to use builder pattern
 based interface.
 
 ## Features
