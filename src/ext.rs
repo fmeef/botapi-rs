@@ -1,6 +1,6 @@
 use hyper_util::rt::TokioIo;
 use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::{RngCore, TryRngCore};
 use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
 use tokio::net::TcpListener;
@@ -104,7 +104,7 @@ impl Webhook {
         allowed_updates: Option<Vec<String>>,
     ) -> Self {
         let mut bytes: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        OsRng.fill_bytes(&mut bytes);
+        OsRng.try_fill_bytes(&mut bytes).unwrap();
         let cookie = Uuid::from_slice(bytes.as_slice()).expect("invalid uuid");
         Self {
             bot: bot.clone(),
