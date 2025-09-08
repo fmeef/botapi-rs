@@ -1,6 +1,6 @@
 use hyper_util::rt::TokioIo;
 use rand::rngs::OsRng;
-use rand::{RngCore, TryRngCore};
+use rand::TryRngCore;
 use std::net::SocketAddr;
 use std::{net::IpAddr, pin::Pin};
 use tokio::net::TcpListener;
