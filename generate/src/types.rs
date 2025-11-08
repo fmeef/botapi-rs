@@ -1042,8 +1042,10 @@ impl<'a> GenerateTypes<'a> {
         let glob = self.generate_setup_global_impl();
         quote! {
             #[cfg(feature = "rhai")]
+            use rhai::{exported_module, export_module, plugin::*, EvalAltResult, Dynamic, Position};
+
+            #[cfg(feature = "rhai")]
             pub mod rhai_helpers {
-                use rhai::{exported_module, export_module, plugin::*};
                 use super::*;
                 pub trait SetupRhai {
                     fn setup_rhai(engine: &mut rhai::Engine);
