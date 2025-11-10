@@ -333,9 +333,10 @@ impl<'a> GenerateTypes<'a> {
                 .collect_vec();
 
             quote! {
-                #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, Hash)]
+                #[derive(Debug, Clone, Default, Eq, PartialEq, PartialOrd, Ord, Hash)]
                 pub enum UpdateExt {
                     #( #fieldnames ),*,
+                    #[default]
                     Invalid
                 }
 
@@ -1066,7 +1067,7 @@ impl<'a> GenerateTypes<'a> {
         let input_file = format_ident!("{}", INPUT_FILE);
         quote! {
 
-            #[derive(Serialize, Deserialize, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+            #[derive(Serialize, Deserialize, Default, Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
             #[cfg_attr(feature = "rhai", derive(rhai::CustomType))]
             pub struct FileBytes {
                 pub(crate) name: String,
