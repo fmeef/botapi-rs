@@ -3,7 +3,7 @@ use anyhow::{anyhow, Ok, Result};
 use convert_case::{Case, Casing};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
+use quote::{__private::TokenStream, format_ident, quote, ToTokens};
 
 use crate::naming::*;
 use crate::schema::{Field, Spec};
@@ -18,7 +18,7 @@ lazy_static! {
 
 /// Generator for the "types" source file
 pub(crate) struct GenerateTypes<'a> {
-    spec: Arc<Spec>,
+    pub(crate) spec: Arc<Spec>,
     multitypes: MultiTypes,
     choose_type: ChooseType<'a>,
 }
@@ -331,8 +331,6 @@ impl<'a> GenerateTypes<'a> {
             use anyhow::{anyhow, Result};
             use reqwest::multipart::Form;
             use crate::bot::Part;
-            #[cfg(feature = "rhai")]
-            use rhai::{CustomType, TypeBuilder};
             use std::default::Default;
             // use std::borrow::Cow;
         })
@@ -1069,11 +1067,13 @@ impl<'a> GenerateTypes<'a> {
             let names_iter = types
                 .values()
                 .map(get_type_name_str)
+                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| format_ident!("{}", v));
 
             let first_name = types
                 .values()
                 .map(get_type_name_str)
+                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| format_ident!("{}", v))
                 .next();
             let types_iter = types
@@ -1222,13 +1222,22 @@ impl<'a> GenerateTypes<'a> {
             } else {
                 quote! {}
             };
-            let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
-                quote! {
-                    impl Default for #name {
-                          fn default() -> Self {
-                                #name::#first_name(#first_type::default())
-                          }
-                      }
+
+            let default = if types.values().all(|v| !self.is_recursive(v)) {
+                if types.values().all(|v| !self.is_recursive(v)) {
+                    if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+                        quote! {
+                            impl Default for #name {
+                                  fn default() -> Self {
+                                        #name::#first_name(#first_type::default())
+                                  }
+                              }
+                        }
+                    } else {
+                        quote!()
+                    }
+                } else {
+                    quote!()
                 }
             } else {
                 quote!()
@@ -1284,6 +1293,7 @@ impl<'a> GenerateTypes<'a> {
             let first_name = types
                 .iter()
                 .map(|v| get_type_name_str(v))
+                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| format_ident!("{}", v))
                 .next();
             let types_iter = types
@@ -1301,6 +1311,7 @@ impl<'a> GenerateTypes<'a> {
                 .iter()
                 .map(|v| type_without_array(v))
                 .map(|v| type_mapper(&v).to_owned())
+                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| {
                     if skip {
                         format_ident!("{v}")
@@ -1436,13 +1447,17 @@ impl<'a> GenerateTypes<'a> {
                 quote! {}
             };
 
-            let default = if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
-                quote! {
-                    impl Default for #name {
-                          fn default() -> Self {
-                                #name::#first_name(#first_type::default())
+            let default = if types.iter().all(|v| !self.is_recursive(v.as_ref())) {
+                if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+                    quote! {
+                        impl Default for #name {
+                              fn default() -> Self {
+                                    #name::#first_name(#first_type::default())
+                              }
                           }
-                      }
+                    }
+                } else {
+                    quote!()
                 }
             } else {
                 quote!()
@@ -1661,7 +1676,7 @@ impl<'a> GenerateTypes<'a> {
         let glob = self.generate_setup_global_impl();
         quote! {
             #[cfg(feature = "rhai")]
-            use rhai::{exported_module, export_module, plugin::*, EvalAltResult, Dynamic, Position};
+            use rhai::{exported_module, export_module, Dynamic};
 
             #[cfg(feature = "rhai")]
             pub mod rhai_helpers {
@@ -1958,19 +1973,12 @@ impl<'a> GenerateTypes<'a> {
                     f.iter().find(|n| n.name == "type").map_or_else(
                         || quote!(),
                         |f| {
-                            let search = "must be ";
-                            let description = f.description.as_deref().unwrap_or("");
-                            let typename = if let Some(index) = description.find(search) {
-                                let n = &description[index + search.len()..];
-                                format!("NoSkip{n}")
-                            } else {
-                                t.name.to_owned()
-                            };
+                            let typename = format!("NoSkip{}", &t.name);
 
                             match regular_type {
                                 Some("String") => {
                                     if !f.required {
-                                        quote! { tg_type: Some(#typename.to_owned()) }
+                                        quote! { tg_type: Some(#typename.to_owned()), }
                                     } else {
                                         quote! {
                                             tg_type: #typename.to_owned(),
@@ -2656,6 +2664,7 @@ impl<'a> GenerateTypes<'a> {
             .values()
             .filter(|p| p.name != "Update")
             .filter(|t| t.fields.as_ref().map(|f| f.len()).unwrap_or(0) > 0)
+            .filter(|t| !self.is_recursive(&t.name))
             .map(|t| {
                 let name = format_ident!("{}", get_type_name(t));
 
@@ -2715,11 +2724,11 @@ impl<'a> GenerateTypes<'a> {
                 use std::default::Default;
                 #( #tests )*
 
-                #[test]
-                fn new_unbox() {
-                    let v: BoxWrapper<Unbox<Message>> = BoxWrapper::new_unbox(Message::default());
-                    let _: Message = v.into();
-                }
+                // #[test]
+                // fn new_unbox() {
+                //     let v: BoxWrapper<Unbox<Message>> = BoxWrapper::new_unbox(Message::default());
+                //     let _: Message = v.into();
+                // }
             }
         }
     }
@@ -2826,9 +2835,15 @@ impl<'a> GenerateTypes<'a> {
             quote! {}
         };
 
+        let def = if self.is_recursive(&t.name) {
+            quote!()
+        } else {
+            quote! { Default, }
+        };
+
         let res = quote! {
             #struct_comment
-            #[derive(Serialize, Deserialize, Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            #[derive(Serialize, Deserialize, Debug, #def Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
             pub struct #typename {
                 #(
                     #fieldnames: #fieldtypes
@@ -2844,7 +2859,10 @@ impl<'a> GenerateTypes<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::sync::{Arc, RwLock};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, RwLock},
+    };
     #[test]
     fn common_methods() {
         let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();

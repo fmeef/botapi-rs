@@ -1,11 +1,90 @@
 use crate::schema::{Field, Spec, Type};
+use crate::types::GenerateTypes;
 use crate::{naming::get_type_name_str, ARRAY_OF, INPUT_FILE, MULTITYPE_ENUM_PREFIX};
 use anyhow::Result;
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
+use quote::{__private::TokenStream, format_ident, quote, ToTokens};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) trait ChooserFn {
     fn cb(&self, types: &TypeChooserOpts<'_, '_>) -> String;
+}
+impl<'a> GenerateTypes<'a> {
+    pub(crate) fn is_recursive(&self, t: &str) -> bool {
+        if let Some(t) = self.spec.get_type(t) {
+            let mut visited = HashSet::new();
+
+            self.is_recursive_internal(t, &mut visited)
+        } else {
+            false
+        }
+    }
+
+    fn is_recursive_internal(&self, t: &Type, visited: &mut HashSet<String>) -> bool {
+        match t.subtypes {
+            Some(ref subtypes) => {
+                for t in subtypes {
+                    if let Some(t) = self.spec.get_type(t) {
+                        if visited.insert(t.name.to_owned()) {
+                            if self.is_recursive_internal(&t, visited) {
+                                return true;
+                            }
+                        } else {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            None => {}
+        }
+        match t.fields {
+            Some(ref fields) => {
+                for field in fields.iter() {
+                    for t in field.types.iter() {
+                        if let Some(t) = self.spec.get_type(t) {
+                            if visited.insert(t.name.to_owned()) {
+                                if self.is_recursive_internal(&t, visited) {
+                                    return true;
+                                }
+                            } else {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                false
+            }
+            None => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{
+        collections::HashMap,
+        sync::{Arc, RwLock},
+    };
+
+    use crate::{schema::Spec, types::GenerateTypes};
+
+    #[test]
+    fn is_recursive() {
+        let json = std::fs::read_to_string("../telegram-bot-api-spec/api.json").unwrap();
+        let spec: Spec = serde_json::from_str(&json).unwrap();
+        let spec = Arc::new(spec);
+        let types = GenerateTypes::new(Arc::clone(&spec), Arc::new(RwLock::new(HashMap::new())));
+
+        let rec = types.is_recursive("RichBlockCaption");
+        assert!(rec);
+
+        let rec = types.is_recursive("RichBlockFooter");
+        assert!(rec);
+
+        let rec = types.is_recursive("ReactionCount");
+        assert!(!rec);
+    }
 }
 
 pub(crate) fn no_lifetime(f: &Field) -> bool {

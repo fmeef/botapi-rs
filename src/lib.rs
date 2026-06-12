@@ -37,10 +37,15 @@
 //! ```
 //! ## Send messages or media
 //! ```no_run
-//! use botapi::gen_types::{FileData, Message, ReplyParametersBuilder};
+//! use std::time::SystemTime;
+//! use botapi::gen_types::{FileData, Message, ReplyParametersBuilder, Chat, MessageBuilder, UserBuilder};
 //! use botapi::bot::Bot;
-//! # tokio_test::block_on(async {
-//! # let message = Message::default();
+//!  tokio_test::block_on(async {
+//! let chat = Chat::default();
+//! let message =
+//!    MessageBuilder::new(1000, SystemTime::now().elapsed().unwrap().as_secs() as i64, chat)
+//!        .set_text("test".to_owned())
+//!        .build();
 //! let client = Bot::new("sometoken").unwrap();
 //! let bytes = vec![1,2,3];
 //! client
