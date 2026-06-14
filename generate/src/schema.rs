@@ -69,7 +69,13 @@ fn iter_subtypes<'a>(
 ) {
     if let Some(st) = t.subtypes.as_deref() {
         for st in st {
-            let st = spec.get_type(st).unwrap();
+            if st == "String" || st.starts_with("Array of") {
+                continue;
+            }
+
+            let st = spec
+                .get_type(st)
+                .expect(&format!("failed to get type {st}"));
 
             // if visited.contains(&(parent, st)) {
             //     continue;

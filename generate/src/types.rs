@@ -81,17 +81,20 @@ impl<'a> GenerateTypes<'a> {
                 let subtypes = v.subtypes.as_ref().unwrap_or(&vec);
                 let subtypes = subtypes
                     .iter()
-                    .filter_map(|v| self.spec.get_type(v))
-                    .map(|t| t.name.as_str())
+                    .map(|v| {
+                        self.spec
+                            .get_type(v)
+                            .map(|t| t.name.as_str())
+                            .unwrap_or(v.as_str())
+                    })
                     .collect::<Vec<&str>>();
                 let statuses = v
                     .subtypes
                     .iter()
                     .flat_map(|v| v.iter())
-                    .flat_map(|st| {
-                        self.spec
-                            .get_type(st)
-                            .unwrap()
+                    .filter(|v| !v.starts_with("RichText"))
+                    .flat_map(|st| match self.spec.get_type(st) {
+                        Some(t) => t
                             .fields
                             .iter()
                             .flat_map(|v| v.iter())
@@ -102,9 +105,11 @@ impl<'a> GenerateTypes<'a> {
                                     .map(|v| &v.as_str()[1..v.as_str().len() - 1])
                                     .map(|v| (v, st.as_str()))
                             })
+                            .collect::<Vec<(_, _)>>(),
+                        None => vec![(st.as_str(), st.as_str())],
                     })
                     .collect::<BTreeMap<&str, &str>>();
-                let e = if !statuses.is_empty() {
+                let e = if !statuses.is_empty() && v.name != "RichText" {
                     let skip = self
                         .generate_enum_internally_tagged(statuses.clone(), &v.name, "status", false)
                         .unwrap();
@@ -1058,6 +1063,7 @@ impl<'a> GenerateTypes<'a> {
         let skip_name = format_ident!("{}", name);
         let no_skip_name = format_ident!("NoSkip{}", name);
 
+        let typename = name;
         let name = if noskip {
             format_ident!("NoSkip{}", name)
         } else {
@@ -1067,13 +1073,11 @@ impl<'a> GenerateTypes<'a> {
             let names_iter = types
                 .values()
                 .map(get_type_name_str)
-                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| format_ident!("{}", v));
 
             let first_name = types
                 .values()
                 .map(get_type_name_str)
-                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| format_ident!("{}", v))
                 .next();
             let types_iter = types
@@ -1081,10 +1085,15 @@ impl<'a> GenerateTypes<'a> {
                 .map(type_without_array)
                 .map(|v| type_mapper(&v).to_owned())
                 .map(|v| {
-                    if noskip {
-                        format_ident!("NoSkip{}", v)
+                    let x = if !noskip || v == "String" {
+                        format_ident!("{v}")
                     } else {
-                        format_ident!("{}", v)
+                        format_ident!("NoSkip{v}")
+                    };
+                    if v == type_without_array(&typename) {
+                        quote! { Box<#x> }
+                    } else {
+                        quote! { #x }
                     }
                 });
             let first_type = types
@@ -1278,6 +1287,7 @@ impl<'a> GenerateTypes<'a> {
         let skip_name = format_ident!("{}", name.as_ref());
         let no_skip_name = format_ident!("NoSkip{}", name.as_ref());
 
+        let typename = name.as_ref();
         let name = if skip {
             format_ident!("{}", name.as_ref())
         } else {
@@ -1293,7 +1303,6 @@ impl<'a> GenerateTypes<'a> {
             let first_name = types
                 .iter()
                 .map(|v| get_type_name_str(v))
-                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| format_ident!("{}", v))
                 .next();
             let types_iter = types
@@ -1301,17 +1310,21 @@ impl<'a> GenerateTypes<'a> {
                 .map(|v| type_without_array(v))
                 .map(|v| type_mapper(&v).to_owned())
                 .map(|v| {
-                    if skip {
+                    let x = if skip || v == "String" {
                         format_ident!("{v}")
                     } else {
                         format_ident!("NoSkip{v}")
+                    };
+                    if v == type_without_array(&typename) {
+                        quote! { Box<#x> }
+                    } else {
+                        quote! { #x }
                     }
                 });
             let first_type = types
                 .iter()
                 .map(|v| type_without_array(v))
                 .map(|v| type_mapper(&v).to_owned())
-                .filter(|p| name != "RichBlock" || (p == "RichBlockDivider"))
                 .map(|v| {
                     if skip {
                         format_ident!("{v}")
@@ -1333,8 +1346,15 @@ impl<'a> GenerateTypes<'a> {
                     .collect::<Vec<_>>();
                 if skip {
                     let match_arms = subtypes.iter().map(|t| {
+                        let noskip = if t == typename {
+                            quote! { Box::new(v.noskip()) }
+                        } else if t == "String" {
+                            quote! { v }
+                        } else {
+                            quote! { v.noskip() }
+                        };
                         quote! {
-                            Self::#t(v) => #no_skip_name :: #t( v.noskip() )
+                            Self::#t(v) => #no_skip_name :: #t( #noskip )
                         }
                     });
 
@@ -1420,8 +1440,15 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     let match_arms = subtypes.iter().map(|t| {
+                        let intoskip = if t == typename {
+                            quote! { Box::new(v.into_skip()) }
+                        } else if t == "String" {
+                            quote! { v }
+                        } else {
+                            quote! { v.into_skip() }
+                        };
                         quote! {
-                            Self::#t(v) => #skip_name :: #t( v.into_skip() )
+                            Self::#t(v) => #skip_name :: #t( #intoskip )
                         }
                     });
 
@@ -1898,7 +1925,11 @@ impl<'a> GenerateTypes<'a> {
     where
         T: AsRef<str>,
     {
+        if traitname.as_ref().starts_with("Array of") {
+            return Ok(quote!());
+        }
         let spec = self.spec.clone();
+
         let supertype = spec
             .get_type(traitname)
             .ok_or_else(|| anyhow!("type not found"))?;
@@ -2440,13 +2471,15 @@ impl<'a> GenerateTypes<'a> {
         let mut res = HashSet::<&Field>::new();
         if let Some(subtypes) = t.subtypes.as_ref() {
             if let Some(first) = subtypes.first() {
-                let first = self.spec.get_type(first).unwrap();
-                res = first.pretty_fields().collect();
+                if let Some(first) = self.spec.get_type(first) {
+                    res = first.pretty_fields().collect();
+                }
             }
             for t in subtypes {
-                let t = self.spec.get_type(t).unwrap();
-                let hashset = self.get_common_methods_recursive(t);
-                res = res.intersection(&hashset).cloned().collect();
+                if let Some(t) = self.spec.get_type(t) {
+                    let hashset = self.get_common_methods_recursive(t);
+                    res = res.intersection(&hashset).cloned().collect();
+                }
             }
         }
         res
@@ -2565,7 +2598,10 @@ impl<'a> GenerateTypes<'a> {
     fn generate_trait(&self, t: &'a Type) -> Result<TokenStream> {
         let typename = format_ident!("Trait{}", t.name);
         let supertraits = if let Some(subtypes) = t.subtypes.as_ref() {
-            let subtypes = subtypes.iter().map(|v| format_ident!("Trait{}", v));
+            let subtypes = subtypes
+                .iter()
+                .filter(|p| !p.starts_with("Array of") && *p != "String")
+                .map(|v| format_ident!("Trait{}", v));
             quote! {
                 : #( #subtypes )+*
             }
