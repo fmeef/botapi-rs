@@ -123,10 +123,10 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     let skip = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name, true)
+                        .generate_enum_str(subtypes.as_slice(), &v.name, true, true)
                         .unwrap();
                     let noskip = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name, false)
+                        .generate_enum_str(subtypes.as_slice(), &v.name, false, true)
                         .unwrap();
                     quote! {
                         #skip
@@ -853,7 +853,7 @@ impl<'a> GenerateTypes<'a> {
         } else {
             let res = if !is_inputfile_types(types) {
                 if let Some(name) = self.get_multitype_name_return(types) {
-                    let t = self.generate_enum_str(types, &name, true)?;
+                    let t = self.generate_enum_str(types, &name, true, false)?;
                     if !is_json_types(types) {
                         let typeiter = types.iter().map(get_type_name_str);
                         let types = generate_fmt_display_enum(&name, typeiter);
@@ -885,7 +885,7 @@ impl<'a> GenerateTypes<'a> {
                 for field in fields {
                     if field.types.len() > 1 && !is_inputfile(field) {
                         if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name, true)?;
+                            let t = self.generate_enum_str(&field.types, &name, true, false)?;
                             tokens.extend(t);
 
                             if !is_json(field) {
@@ -904,7 +904,7 @@ impl<'a> GenerateTypes<'a> {
                 for field in fields {
                     if field.types.len() > 1 && !is_inputfile(field) {
                         if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name, true)?;
+                            let t = self.generate_enum_str(&field.types, &name, true, false)?;
                             tokens.extend(t);
 
                             if !is_json(field) {
@@ -1278,7 +1278,13 @@ impl<'a> GenerateTypes<'a> {
     }
 
     /// Generate an enum with custom types
-    fn generate_enum_str<N, I>(&self, types: &[I], name: &N, skip: bool) -> Result<TokenStream>
+    fn generate_enum_str<N, I>(
+        &self,
+        types: &[I],
+        name: &N,
+        skip: bool,
+        array: bool,
+    ) -> Result<TokenStream>
     where
         N: AsRef<str>,
         I: AsRef<str>,
@@ -1307,15 +1313,25 @@ impl<'a> GenerateTypes<'a> {
                 .next();
             let types_iter = types
                 .iter()
-                .map(|v| type_without_array(v))
+                .map(|v| {
+                    if array {
+                        v.as_ref()
+                    } else {
+                        type_without_array(v)
+                    }
+                })
                 .map(|v| type_mapper(&v).to_owned())
                 .map(|v| {
-                    let x = if skip || v == "String" {
-                        format_ident!("{v}")
+                    let a = type_without_array(&v);
+
+                    let x = if skip || a == "String" {
+                        format_ident!("{a}")
                     } else {
-                        format_ident!("NoSkip{v}")
+                        format_ident!("NoSkip{a}")
                     };
-                    if v == type_without_array(&typename) {
+                    if a != v {
+                        quote! { Vec<#x> }
+                    } else if v == type_without_array(&typename) {
                         quote! { Box<#x> }
                     } else {
                         quote! { #x }
@@ -1341,18 +1357,29 @@ impl<'a> GenerateTypes<'a> {
                     .as_ref()
                     .unwrap_or(&vec)
                     .iter()
-                    .map(get_type_name_str)
-                    .map(|t| format_ident!("{}", t))
+                    .map(|v| {
+                        if v.starts_with("Array of") {
+                            v.to_owned()
+                        } else {
+                            get_type_name_str(v)
+                        }
+                    })
                     .collect::<Vec<_>>();
                 if skip {
                     let match_arms = subtypes.iter().map(|t| {
-                        let noskip = if t == typename {
+                        let mut t = t.to_owned();
+                        let noskip = if t.starts_with("Array of") {
+                            t = type_without_array(&t).to_owned();
+                            quote! { v.into_iter().map(|v| v.noskip()).collect() }
+                        } else if t == typename {
                             quote! { Box::new(v.noskip()) }
                         } else if t == "String" {
                             quote! { v }
                         } else {
                             quote! { v.noskip() }
                         };
+                        let t = format_ident!("{}", t);
+
                         quote! {
                             Self::#t(v) => #no_skip_name :: #t( #noskip )
                         }
@@ -1440,13 +1467,19 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     let match_arms = subtypes.iter().map(|t| {
-                        let intoskip = if t == typename {
+                        let mut t = t.to_owned();
+                        let intoskip = if t.starts_with("Array of") {
+                            t = type_without_array(&t).to_owned();
+                            quote! { v.into_iter().map(|v| v.into_skip()).collect() }
+                        } else if t == typename {
                             quote! { Box::new(v.into_skip()) }
                         } else if t == "String" {
                             quote! { v }
                         } else {
                             quote! { v.into_skip() }
                         };
+                        let t = format_ident!("{}", t);
+
                         quote! {
                             Self::#t(v) => #skip_name :: #t( #intoskip )
                         }
