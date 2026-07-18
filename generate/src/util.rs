@@ -172,15 +172,27 @@ where
 }
 
 /// Helper function to generate a std::fmt::Display implementation for multiple types
-pub(crate) fn generate_fmt_display_enum<'a, T, V, U>(name: &T, types: V) -> TokenStream
+pub(crate) fn generate_fmt_display_enum<'a, T, V, U>(n: &T, types: V) -> TokenStream
 where
     T: AsRef<str>,
     V: Iterator<Item = U>,
     U: AsRef<str> + 'a,
 {
-    let name = format_ident!("{}", name.as_ref());
-    let types = types.map(|v| {
-        let t = format_ident!("{}", v.as_ref());
+    let name = type_without_array(n);
+
+    let name = format_ident!("{}", name);
+    let types = types.map(|tn| {
+        let tn = tn.as_ref();
+        let no_arr = type_without_array(&tn);
+        let v = get_type_name_str(&no_arr);
+
+        let t  = if tn != v && is_json_types_internal(&[&no_arr]){
+            format_ident!("{v}Arr")
+        } else {
+          format_ident!("{v}")
+        };
+
+
         if is_primative(&[v]) {
             quote! {  #name::#t(thing) => thing.to_string() }
         } else {
@@ -539,7 +551,9 @@ pub(crate) fn should_wrap(types: &[String]) -> bool {
 
 pub(crate) fn is_json_types_internal(types: &[&str]) -> bool {
     for t in types {
-        for compare in ["Integer", "Boolean", "Float", "String"] {
+        for compare in [
+            "Integer", "Boolean", "Float", "String", "i64", "f64", "bool",
+        ] {
             if t.ends_with(compare) && !t.starts_with("Array of") {
                 return false;
             }
@@ -579,7 +593,10 @@ where
         false
     } else {
         let field = &field[0];
-        matches!(field.as_ref(), "Integer" | "Boolean" | "Float")
+        matches!(
+            field.as_ref(),
+            "Integer" | "Boolean" | "Float" | "i64" | "f64" | "bool"
+        )
     }
 }
 

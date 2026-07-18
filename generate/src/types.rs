@@ -123,10 +123,10 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     let skip = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name, true, true)
+                        .generate_enum_str(subtypes.as_slice(), &v.name, true, true, false, None)
                         .unwrap();
                     let noskip = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name, false, true)
+                        .generate_enum_str(subtypes.as_slice(), &v.name, false, true, false, None)
                         .unwrap();
                     quote! {
                         #skip
@@ -705,12 +705,6 @@ impl<'a> GenerateTypes<'a> {
                   }
               }
 
-
-
-              //new
-
-
-
               impl IntoSkip for #skipname {
                   type Skip = #name;
                   fn into_skip(self) -> Self::Skip {
@@ -853,7 +847,7 @@ impl<'a> GenerateTypes<'a> {
         } else {
             let res = if !is_inputfile_types(types) {
                 if let Some(name) = self.get_multitype_name_return(types) {
-                    let t = self.generate_enum_str(types, &name, true, false)?;
+                    let t = self.generate_enum_str(types, &name, true, false, false, None)?;
                     if !is_json_types(types) {
                         let typeiter = types.iter().map(get_type_name_str);
                         let types = generate_fmt_display_enum(&name, typeiter);
@@ -880,39 +874,74 @@ impl<'a> GenerateTypes<'a> {
     fn generate_multitype_enums(&self) -> Result<TokenStream> {
         let mut tokens = quote!();
 
-        for jsontype in self.spec.types.values() {
-            if let Some(fields) = jsontype.fields.as_ref() {
-                for field in fields {
-                    if field.types.len() > 1 && !is_inputfile(field) {
-                        if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name, true, false)?;
-                            tokens.extend(t);
+        let mut methods = BTreeMap::<String, (BTreeSet<String>, Vec<&Vec<String>>)>::new();
 
-                            if !is_json(field) {
-                                let typeiter = field.types.iter().map(get_type_name_str);
-                                let t = generate_fmt_display_enum(&name, typeiter);
-                                tokens.extend(t);
-                            }
-                        }
-                    }
-                }
-            }
+        let methods_iter = self
+            .spec
+            .methods
+            .values()
+            .flat_map(|v| v.fields.as_ref())
+            .flat_map(|v| v.iter())
+            .map(|v| (v.name.as_str(), v));
+
+        for (name, method) in methods_iter {
+            let (entry, old) = methods
+                .entry(name.to_owned())
+                .or_insert_with(|| (BTreeSet::<String>::new(), Vec::new()));
+            entry.extend(method.types.iter().map(|v| v.to_owned()));
+            old.push(&method.types);
         }
 
-        for method in self.spec.methods.values() {
-            if let Some(fields) = method.fields.as_ref() {
-                for field in fields {
-                    if field.types.len() > 1 && !is_inputfile(field) {
-                        if let Some(name) = self.get_multitype_name(field) {
-                            let t = self.generate_enum_str(&field.types, &name, true, false)?;
-                            tokens.extend(t);
+        let types_iter = self
+            .spec
+            .types
+            .values()
+            .flat_map(|v| v.fields.as_ref())
+            .flat_map(|v| v.iter())
+            .map(|v| (v.name.as_str(), v));
 
-                            if !is_json(field) {
-                                let typeiter = field.types.iter().map(get_type_name_str);
-                                let t = generate_fmt_display_enum(&name, typeiter);
-                                tokens.extend(t);
-                            }
-                        }
+        for (name, method) in types_iter {
+            let (entry, old) = methods
+                .entry(name.to_owned())
+                .or_insert_with(|| (BTreeSet::<String>::new(), Vec::new()));
+            entry.extend(method.types.iter().map(|v| v.to_owned()));
+            old.push(&method.types);
+        }
+
+        // for (name, (types, origin)) in methods.iter() {
+        //     let types = types.into_iter().map(|v| v.to_owned()).collect::<Vec<_>>();
+        //     if types.len() > 1 && !is_inputfile_types(&types) {
+        //         if let Some(name) = self.get_multitype_name_types(&name, &types, &origin) {
+        //             let t = self.generate_enum_str(&types, &name, true, true)?;
+        //             tokens.extend(t);
+
+        //             if !is_json_types(&types) {
+        //                 let typeiter = types.iter().map(get_type_name_str);
+        //                 let t = generate_fmt_display_enum(&name, typeiter);
+        //                 tokens.extend(t);
+        //             }
+        //         }
+        //     }
+        // }
+
+        for (name, (types, origin)) in methods {
+            // if name == "media" {
+            //     panic!("{types:?}");
+            // }
+            let types = types.into_iter().collect::<Vec<_>>();
+            if types.len() > 1 && !is_inputfile_types(&types) {
+                if let Some(name) = self.get_multitype_name_types(&name, &types, &origin) {
+                    let t =
+                        self.generate_enum_str(&types, &name, true, true, true, Some(&types))?;
+                    tokens.extend(t);
+                    let t =
+                        self.generate_enum_str(&types, &name, false, true, true, Some(&types))?;
+                    tokens.extend(t);
+
+                    if !is_json_types(&types) {
+                        let typeiter = types.iter();
+                        let t = generate_fmt_display_enum(&name, typeiter);
+                        tokens.extend(t);
                     }
                 }
             }
@@ -1027,6 +1056,45 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
+    fn get_multitype_name_types<T>(
+        &self,
+        name: &T,
+        types: &[String],
+        orig: &[&Vec<String>],
+    ) -> Option<String>
+    where
+        T: AsRef<str>,
+    {
+        let mut multitypes = self
+            .multitypes
+            .write()
+            .expect("failed to lock write access");
+
+        let k = types
+            .iter()
+            .map(get_type_name_str)
+            .collect::<Vec<String>>()
+            .join("");
+
+        for orig in orig {
+            let name = get_multitype_name_types(name, types);
+
+            let key = orig
+                .iter()
+                .map(get_type_name_str)
+                .collect::<Vec<String>>()
+                .join("");
+            multitypes.insert(key, name.clone());
+        }
+        if is_inputfile_types(types) {
+            Some(INPUT_FILE.to_owned())
+        } else if multitypes.get(&k).is_none() {
+            let name = get_multitype_name_types(name, types);
+            Some(name)
+        } else {
+            None
+        }
+    }
     /// Helper method for generating a name for a multitype enum while storing it in the mapping
     /// for later use by methods generator
     fn get_multitype_name(&self, field_name: &Field) -> Option<String> {
@@ -1070,15 +1138,25 @@ impl<'a> GenerateTypes<'a> {
             format_ident!("{}", name)
         };
         let e = if !types.is_empty() {
-            let names_iter = types
-                .values()
-                .map(get_type_name_str)
-                .map(|v| format_ident!("{}", v));
+            let names_iter = types.values().map(|v| {
+                let o = get_type_name_str(&v);
+                if v.starts_with("Array of") {
+                    format_ident!("{o}Arr")
+                } else {
+                    format_ident!("{}", o)
+                }
+            });
 
             let first_name = types
                 .values()
-                .map(get_type_name_str)
-                .map(|v| format_ident!("{}", v))
+                .map(|v| {
+                    let o = get_type_name_str(&v);
+                    if v.starts_with("Array of") {
+                        format_ident!("{o}Arr")
+                    } else {
+                        format_ident!("{}", o)
+                    }
+                })
                 .next();
             let types_iter = types
                 .values()
@@ -1098,16 +1176,23 @@ impl<'a> GenerateTypes<'a> {
                 });
             let first_type = types
                 .values()
-                .map(type_without_array)
-                .map(|v| type_mapper(&v).to_owned())
                 .map(|v| {
-                    if noskip {
-                        format_ident!("NoSkip{}", v)
+                    if v.starts_with("Array of") {
+                        format_ident!("Vec")
                     } else {
-                        format_ident!("{}", v)
+                        let t = type_without_array(v);
+                        let t = type_mapper(&t).to_owned();
+
+                        if noskip && is_json_types_internal(&[v]) {
+                            format_ident!("NoSkip{t}")
+                        } else {
+                            format_ident!("{t}")
+                        }
                     }
                 })
                 .next();
+
+            let first_type_arr = types.values().map(|v| *v == "Float").next();
 
             let skip_impl = if let Some(subtypes) = subtypes {
                 let vec = vec![];
@@ -1235,10 +1320,15 @@ impl<'a> GenerateTypes<'a> {
             let default = if types.values().all(|v| !self.is_recursive(v)) {
                 if types.values().all(|v| !self.is_recursive(v)) {
                     if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+                        let float_or = if let Some(true) = first_type_arr {
+                            quote! { ::ordered_float::OrderedFloat(#first_type::default()) }
+                        } else {
+                            quote! { #first_type::default() }
+                        };
                         quote! {
                             impl Default for #name {
                                   fn default() -> Self {
-                                        #name::#first_name(#first_type::default())
+                                        #name::#first_name(#float_or)
                                   }
                               }
                         }
@@ -1284,16 +1374,24 @@ impl<'a> GenerateTypes<'a> {
         name: &N,
         skip: bool,
         array: bool,
+        rename_array: bool,
+        extra_subtypes: Option<&[String]>,
     ) -> Result<TokenStream>
     where
         N: AsRef<str>,
         I: AsRef<str>,
     {
-        let subtypes = self.spec.get_type(name.as_ref());
+        let subtypes = self
+            .spec
+            .get_type(name.as_ref())
+            .and_then(|v| v.subtypes.as_deref())
+            .or(extra_subtypes);
+
         let skip_name = format_ident!("{}", name.as_ref());
         let no_skip_name = format_ident!("NoSkip{}", name.as_ref());
 
         let typename = name.as_ref();
+
         let name = if skip {
             format_ident!("{}", name.as_ref())
         } else {
@@ -1301,15 +1399,27 @@ impl<'a> GenerateTypes<'a> {
         };
 
         let e = if !types.is_empty() {
-            let names_iter = types
-                .iter()
-                .map(|v| get_type_name_str(v))
-                .map(|v| format_ident!("{}", v));
+            let names_iter = types.iter().map(|v| {
+                let v = v.as_ref();
+                let o = get_type_name_str(&v);
+                if v.starts_with("Array of") {
+                    format_ident!("{o}Arr")
+                } else {
+                    format_ident!("{}", o)
+                }
+            });
 
             let first_name = types
                 .iter()
-                .map(|v| get_type_name_str(v))
-                .map(|v| format_ident!("{}", v))
+                .map(|v| {
+                    let v = v.as_ref();
+                    let o = get_type_name_str(&v);
+                    if v.starts_with("Array of") {
+                        format_ident!("{o}Arr")
+                    } else {
+                        format_ident!("{}", o)
+                    }
+                })
                 .next();
             let types_iter = types
                 .iter()
@@ -1323,11 +1433,16 @@ impl<'a> GenerateTypes<'a> {
                 .map(|v| type_mapper(&v).to_owned())
                 .map(|v| {
                     let a = type_without_array(&v);
+                    let a = type_mapper(&a);
 
-                    let x = if skip || a == "String" {
-                        format_ident!("{a}")
+                    let x = if skip || !is_json_types_internal(&[a]) {
+                        if a == "f64" {
+                            quote! { ::ordered_float::OrderedFloat<f64> }
+                        } else {
+                            format_ident!("{a}").to_token_stream()
+                        }
                     } else {
-                        format_ident!("NoSkip{a}")
+                        format_ident!("NoSkip{a}").to_token_stream()
                     };
                     if a != v {
                         quote! { Vec<#x> }
@@ -1339,23 +1454,24 @@ impl<'a> GenerateTypes<'a> {
                 });
             let first_type = types
                 .iter()
-                .map(|v| type_without_array(v))
-                .map(|v| type_mapper(&v).to_owned())
                 .map(|v| {
-                    if skip {
-                        format_ident!("{v}")
+                    if v.as_ref().starts_with("Array of") {
+                        format_ident!("Vec")
                     } else {
-                        format_ident!("NoSkip{v}")
+                        let t = type_without_array(v);
+                        let t = type_mapper(&t).to_owned();
+
+                        if skip || !is_json_types_internal(&[v.as_ref()]) {
+                            format_ident!("{t}")
+                        } else {
+                            format_ident!("NoSkip{t}")
+                        }
                     }
                 })
                 .next();
 
-            let noskip = if let Some(subtypes) = subtypes {
-                let vec = vec![];
-                let subtypes = subtypes
-                    .subtypes
-                    .as_ref()
-                    .unwrap_or(&vec)
+            let noskip = if let Some(st) = subtypes {
+                let subtypes = st
                     .iter()
                     .map(|v| {
                         if v.starts_with("Array of") {
@@ -1369,17 +1485,18 @@ impl<'a> GenerateTypes<'a> {
                     let match_arms = subtypes.iter().map(|t| {
                         let mut t = t.to_owned();
                         let noskip = if t.starts_with("Array of") {
-                            t = type_without_array(&t).to_owned();
-                            quote! { v.into_iter().map(|v| v.noskip()).collect() }
+                            let v = type_without_array(&t);
+                            let v = type_mapper(&v).to_case(Case::UpperCamel);
+                            t = format!("{v}Arr");
+                            quote! { v.into_iter().map(|v| v.into_noskip()).collect() }
                         } else if t == typename {
                             quote! { Box::new(v.noskip()) }
                         } else if t == "String" {
                             quote! { v }
                         } else {
-                            quote! { v.noskip() }
+                            quote! { v.into_noskip() }
                         };
-                        let t = format_ident!("{}", t);
-
+                        let t = format_ident!("{t}");
                         quote! {
                             Self::#t(v) => #no_skip_name :: #t( #noskip )
                         }
@@ -1469,7 +1586,9 @@ impl<'a> GenerateTypes<'a> {
                     let match_arms = subtypes.iter().map(|t| {
                         let mut t = t.to_owned();
                         let intoskip = if t.starts_with("Array of") {
-                            t = type_without_array(&t).to_owned();
+                            let v = type_without_array(&t);
+                            let v = type_mapper(&v).to_case(Case::UpperCamel);
+                            t = format!("{v}Arr");
                             quote! { v.into_iter().map(|v| v.into_skip()).collect() }
                         } else if t == typename {
                             quote! { Box::new(v.into_skip()) }
@@ -1478,7 +1597,7 @@ impl<'a> GenerateTypes<'a> {
                         } else {
                             quote! { v.into_skip() }
                         };
-                        let t = format_ident!("{}", t);
+                        let t = format_ident!("{t}");
 
                         quote! {
                             Self::#t(v) => #skip_name :: #t( #intoskip )
@@ -1492,6 +1611,8 @@ impl<'a> GenerateTypes<'a> {
                     };
 
                     quote! {
+
+
                         impl #no_skip_name {
                             pub fn noskip(self) -> #no_skip_name {
                                 self
@@ -1507,12 +1628,19 @@ impl<'a> GenerateTypes<'a> {
                 quote! {}
             };
 
+            let first_type_arr = types.iter().map(|v| v.as_ref() == "Float").next();
+
             let default = if types.iter().all(|v| !self.is_recursive(v.as_ref())) {
                 if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
+                    let float_or = if let Some(true) = first_type_arr {
+                        quote! { ::ordered_float::OrderedFloat(#first_type::default()) }
+                    } else {
+                        quote! { #first_type::default() }
+                    };
                     quote! {
                         impl Default for #name {
                               fn default() -> Self {
-                                    #name::#first_name(#first_type::default())
+                                    #name::#first_name(#float_or)
                               }
                           }
                     }
@@ -1520,7 +1648,13 @@ impl<'a> GenerateTypes<'a> {
                     quote!()
                 }
             } else {
-                quote!()
+                quote! {
+                    impl Default for #name {
+                          fn default() -> Self {
+                                panic!("recursive type")
+                          }
+                      }
+                }
             };
 
             //let enum_methods = self.generate_enum_methods()
@@ -2285,7 +2419,7 @@ impl<'a> GenerateTypes<'a> {
                 || ! should_wrap(&f.types) || f.name == "type"  {
                     quote! { .clone() }
                 } else {
-                    quote! { .clone().into() }
+                    quote! { .clone().consume() }
                 };
 
                 let copied = if is_primative(&f.types) {
