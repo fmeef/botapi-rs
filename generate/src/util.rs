@@ -24,6 +24,9 @@ impl<'a> GenerateTypes<'a> {
         match t.subtypes {
             Some(ref subtypes) => {
                 for t in subtypes {
+                    if t.starts_with("Array of") {
+                        continue;
+                    }
                     if let Some(t) = self.spec.get_type(t) {
                         if visited.insert(t.name.to_owned()) {
                             if self.is_recursive_internal(&t, visited) {
@@ -42,6 +45,9 @@ impl<'a> GenerateTypes<'a> {
             Some(ref fields) => {
                 for field in fields.iter() {
                     for t in field.types.iter() {
+                        if t.starts_with("Array of") {
+                            continue;
+                        }
                         if let Some(t) = self.spec.get_type(t) {
                             if visited.insert(t.name.to_owned()) {
                                 if self.is_recursive_internal(&t, visited) {

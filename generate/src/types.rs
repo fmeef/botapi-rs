@@ -1630,7 +1630,7 @@ impl<'a> GenerateTypes<'a> {
 
             let first_type_arr = types.iter().map(|v| v.as_ref() == "Float").next();
 
-            let default = if types.iter().all(|v| !self.is_recursive(v.as_ref())) {
+            let default = if types.iter().take(1).all(|v| !self.is_recursive(v.as_ref())) {
                 if let (Some(first_name), Some(first_type)) = (first_name, first_type) {
                     let float_or = if let Some(true) = first_type_arr {
                         quote! { ::ordered_float::OrderedFloat(#first_type::default()) }

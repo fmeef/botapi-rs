@@ -54,7 +54,9 @@
 //!            FileData::Bytes(bytes),
 //!     )
 //!     .caption("If you do not solve this captcha correctly you will be terminated by memetic kill agent")
-//!     .reply_parameters(&ReplyParametersBuilder::new(message.get_message_id()).build())
+//!     .reply_parameters(&ReplyParametersBuilder::new()
+//!     .set_message_id(message.get_message_id())
+//!     .build())
 //!     .build()
 //!     .await.unwrap();
 //! })
