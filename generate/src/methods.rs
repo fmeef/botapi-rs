@@ -3,7 +3,7 @@ use crate::{naming::*, schema::Method};
 use crate::{util::*, MultiTypes, INPUT_FILE};
 use anyhow::{anyhow, Result};
 use once_cell::sync::OnceCell;
-use quote::{format_ident, quote, ToTokens, __private::TokenStream};
+use quote::{__private::TokenStream, format_ident, quote, ToTokens};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -555,6 +555,18 @@ impl<'a> GenerateMethods<'a> {
         Ok(res)
     }
 
+    fn generate_subtypes_file_handler(&self, method: &Method) -> TokenStream {
+        if let Some(subtypes) = method.fields.as_ref().map(|v| {
+            v.iter()
+                .flat_map(|v| v.types.iter())
+                .flat_map(|v| self.spec.get_type(&v))
+        }) {
+            quote! {}
+        } else {
+            quote! {}
+        }
+    }
+
     /// If a method handles uploaded files, generate multipart/form-data code
     fn generate_file_handler(&self, method: &Method) -> TokenStream {
         if let Some(fieldlist) = method
@@ -608,15 +620,34 @@ impl<'a> GenerateMethods<'a> {
             .unwrap_or_default()
             .iter()
             .fold(false, |b, f| if is_inputfile(f) { true } else { b });
+
+        let media = method
+            .fields
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .flat_map(|f| f.types.iter())
+            .flat_map(|f| self.spec.get_type(&f))
+            .filter(|v| v.is_media())
+            .collect::<Vec<_>>();
         if method.fields.as_deref().unwrap_or_default().is_empty() {
             quote! {
                 self.post_empty(#endpoint).await?
             }
-        } else if inputfile {
-            quote! {
-                self.post_data(#endpoint, form, data).await?
-            }
-        } else {
+        }
+        // else if inputfile || media.len() > 1 {
+        //     quote! {
+        //         for data in data {
+        //             self.post_data(#endpoint, form, data).await?;
+        //         }
+        //     }
+        // }
+        // else if inputfile || !media.is_empty() {
+        //     quote! {
+        //         self.post_data(#endpoint, form, data).await?
+        //     }
+        // }
+        else {
             quote! {
                 self.post(#endpoint, form).await?
             }

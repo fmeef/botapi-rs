@@ -4,6 +4,7 @@ use crate::{
 };
 
 use convert_case::{Case, Casing};
+use quote::{format_ident, quote, ToTokens};
 
 /// Reserved words in rust as of 2022. Used to avoid generating identifiers that clash with
 /// keywords
@@ -27,6 +28,41 @@ where
     } else {
         t
     }
+}
+
+pub(crate) fn type_enum_components<'a, I, S>(
+    types: I,
+    typename: &'a str,
+    noskip: bool,
+) -> (Vec<impl ToTokens + 'a>, Vec<impl ToTokens + 'a>)
+where
+    I: Iterator<Item = S>,
+    S: AsRef<str> + 'a,
+{
+    types
+        .map(move |v| {
+            let u = type_without_array(&v);
+            let u = type_mapper(&u);
+            let o = get_type_name_str(&v);
+            let v = if v.as_ref().starts_with("Array of") {
+                format_ident!("{o}Arr")
+            } else {
+                format_ident!("{}", o)
+            };
+            let x = if !noskip || u == "String" {
+                format_ident!("{u}")
+            } else {
+                format_ident!("NoSkip{u}")
+            };
+            let u = if u == type_without_array(&typename) {
+                quote! { Box<#x> }
+            } else {
+                quote! { #x }
+            };
+
+            (v, u)
+        })
+        .unzip()
 }
 
 /// Sanitize a type to conform to rust style and avoid using reserved words

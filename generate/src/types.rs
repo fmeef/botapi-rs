@@ -1138,60 +1138,11 @@ impl<'a> GenerateTypes<'a> {
             format_ident!("{}", name)
         };
         let e = if !types.is_empty() {
-            let names_iter = types.values().map(|v| {
-                let o = get_type_name_str(&v);
-                if v.starts_with("Array of") {
-                    format_ident!("{o}Arr")
-                } else {
-                    format_ident!("{}", o)
-                }
-            });
+            let (names_iter, types_iter) = type_enum_components(types.values(), typename, noskip);
 
-            let first_name = types
-                .values()
-                .map(|v| {
-                    let o = get_type_name_str(&v);
-                    if v.starts_with("Array of") {
-                        format_ident!("{o}Arr")
-                    } else {
-                        format_ident!("{}", o)
-                    }
-                })
-                .next();
-            let types_iter = types
-                .values()
-                .map(type_without_array)
-                .map(|v| type_mapper(&v).to_owned())
-                .map(|v| {
-                    let x = if !noskip || v == "String" {
-                        format_ident!("{v}")
-                    } else {
-                        format_ident!("NoSkip{v}")
-                    };
-                    if v == type_without_array(&typename) {
-                        quote! { Box<#x> }
-                    } else {
-                        quote! { #x }
-                    }
-                });
-            let first_type = types
-                .values()
-                .map(|v| {
-                    if v.starts_with("Array of") {
-                        format_ident!("Vec")
-                    } else {
-                        let t = type_without_array(v);
-                        let t = type_mapper(&t).to_owned();
+            let first_name = names_iter.first();
 
-                        if noskip && is_json_types_internal(&[v]) {
-                            format_ident!("NoSkip{t}")
-                        } else {
-                            format_ident!("{t}")
-                        }
-                    }
-                })
-                .next();
-
+            let first_type = types_iter.first();
             let first_type_arr = types.values().map(|v| *v == "Float").next();
 
             let skip_impl = if let Some(subtypes) = subtypes {
