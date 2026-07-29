@@ -4,6 +4,7 @@ use crate::{
 };
 
 use convert_case::{Case, Casing};
+use quote::__private::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 
 /// Reserved words in rust as of 2022. Used to avoid generating identifiers that clash with
@@ -30,21 +31,39 @@ where
     }
 }
 
+pub(crate) struct TokenName<T, S> {
+    pub(crate) name: S,
+    pub(crate) tokens: T,
+}
+
+impl<T, S> ToTokens for TokenName<T, S>
+where
+    T: ToTokens,
+    S: AsRef<str> + Clone,
+{
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.tokens.to_tokens(tokens)
+    }
+}
+
 pub(crate) fn type_enum_components<'a, I, S>(
     types: I,
     typename: &'a str,
     noskip: bool,
-) -> (Vec<impl ToTokens + 'a>, Vec<impl ToTokens + 'a>)
+) -> (
+    Vec<TokenName<impl ToTokens + 'a, S>>,
+    Vec<TokenName<impl ToTokens + 'a, S>>,
+)
 where
     I: Iterator<Item = S>,
-    S: AsRef<str> + 'a,
+    S: AsRef<str> + Clone + 'a,
 {
     types
         .map(move |v| {
             let u = type_without_array(&v);
             let u = type_mapper(&u);
             let o = get_type_name_str(&v);
-            let v = if v.as_ref().starts_with("Array of") {
+            let n = if v.as_ref().starts_with("Array of") {
                 format_ident!("{o}Arr")
             } else {
                 format_ident!("{}", o)
@@ -60,7 +79,13 @@ where
                 quote! { #x }
             };
 
-            (v, u)
+            let n = TokenName {
+                name: v.clone(),
+                tokens: n,
+            };
+
+            let u = TokenName { name: v, tokens: u };
+            (n, u)
         })
         .unzip()
 }

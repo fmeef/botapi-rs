@@ -65,6 +65,18 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, quote! { &'a str }).to_token_stream()
                 } else if is_chatid(&f.types) && generic {
                     is_optional(f, quote! { V }).to_token_stream()
+                }  else if f
+                    .types
+                    .iter()
+                    .flat_map(|v| self.spec.get_type(v))
+                    .any(|v| v.is_media())
+                {
+                    self.choose_type
+                        .get()
+                        .unwrap()
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a mut })
+                        .unwrap()
+                        .to_token_stream()
                 } else {
                     self.choose_type
                         .get()
@@ -106,6 +118,18 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, quote! { &'a str }).to_token_stream()
                 } else if is_chatid(&f.types) && generic {
                     is_optional(f, quote! { V }).to_token_stream()
+                } else if f
+                    .types
+                    .iter()
+                    .flat_map(|v| self.spec.get_type(v))
+                    .any(|v| v.is_media())
+                {
+                    self.choose_type
+                        .get()
+                        .unwrap()
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a mut })
+                        .unwrap()
+                        .to_token_stream()
                 } else {
                     self.choose_type
                         .get()
@@ -179,6 +203,18 @@ impl<'a> GenerateMethods<'a> {
                 quote! { FileData }
             } else if is_str_field(f) {
                 quote! { &'a str }
+            } else if f
+                .types
+                .iter()
+                .flat_map(|v| self.spec.get_type(v))
+                .any(|v| v.is_media())
+            {
+                self.choose_type
+                    .get()
+                    .unwrap()
+                    .choose_type_ref(&f.types, None, &f.name, false, || quote! { 'a mut })
+                    .unwrap()
+                    .to_token_stream()
             } else {
                 self.choose_type
                     .get()
@@ -455,6 +491,18 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, quote! { &'a str })
                 } else if is_chatid(&f.types) {
                     is_optional(f, quote! { V }).to_token_stream()
+                } else if f
+                    .types
+                    .iter()
+                    .flat_map(|v| self.spec.get_type(v))
+                    .any(|v| v.is_media())
+                {
+                    self.choose_type
+                        .get()
+                        .unwrap()
+                        .choose_type_ref(&f.types, None, &f.name, !f.required, || quote! { 'a mut })
+                        .unwrap()
+                        .to_token_stream()
                 } else {
                     self.choose_type
                         .get()
@@ -556,12 +604,113 @@ impl<'a> GenerateMethods<'a> {
     }
 
     fn generate_subtypes_file_handler(&self, method: &Method) -> TokenStream {
-        if let Some(subtypes) = method.fields.as_ref().map(|v| {
-            v.iter()
-                .flat_map(|v| v.types.iter())
-                .flat_map(|v| self.spec.get_type(&v))
-        }) {
-            quote! {}
+        if let Some(ref fields) = method.fields {
+            let blocks = fields
+                .iter()
+                .flat_map(|f| {
+                    let name = f.name.as_str();
+                    let type_ident = format_ident!("{}", name);
+                    f.types
+                        .iter()
+                        .flat_map(|v| self.spec.get_type(&v))
+                        .flat_map(move |t| {
+                            let typename = get_type_name(t);
+                            let typename = format_ident!("{}", typename);
+                            let (names_iter, _) = type_enum_components(
+                                t.subtypes
+                                    .iter()
+                                    .flat_map(|v| v.iter())
+                                    .flat_map(|v| self.spec.get_type(v))
+                                    .filter(|p| p.is_media())
+                                    .map(|v| &v.name),
+                                &method.name,
+                                true,
+                            );
+
+                            // let (skip_names_iter, _) = type_enum_components(
+                            //     t.subtypes
+                            //         .iter()
+                            //         .flat_map(|v| v.iter())
+                            //         .flat_map(|v| self.spec.get_type(v))
+                            //         .filter(|p| p.name == "InputMediaLocation" && t.name == "InputMediaVenue")
+                            //         .map(|v| &v.name),
+                            //     &method.name,
+                            //     true,
+                            // );
+
+                            if names_iter.is_empty() {
+                                None
+                            } else {
+                                let res = if f.required {
+                                    let names_iter = names_iter.iter().map(|v| {
+                                        if v.name == "InputMediaLocation"
+                                            || v.name == "InputMediaVenue"
+                                        {
+                                            quote! {
+                                               #typename :: #v (_) => data
+                                            }
+                                        } else {
+                                            quote! {
+                                                #typename :: #v (ref mut v) => {
+                                                    let data = v.convert_form(data)?;
+                                                    //self.media = Some(InputFile::String(format!("attach://{st}")));
+                                                    data
+                                                }
+                                            }
+                                        }
+                                    });
+                                    let mat = quote! {
+                                        #( #names_iter ),*
+                                    };
+                                    quote! {
+                                         let data = match #type_ident {
+                                            #mat
+                                         };
+                                    }
+                                } else {
+                                    let names_iter = names_iter.iter().map(|v| {
+                                        if v.name == "InputMediaLocation"
+                                            || v.name == "InputMediaVenue"
+                                        {
+                                            quote! {
+                                                Some(#typename :: #v (_)) => data
+                                            }
+                                        } else {
+                                            quote! {
+                                                Some(#typename :: #v (v)) => {
+                                                    let data = v.convert_form(data)?;
+                                                    //self.media = Some(InputFile::String(format!("attach://{st}")));
+                                                    data
+                                                }
+                                            }
+                                        }
+                                    });
+                                    let mat = quote! {
+                                        #( #names_iter ),*
+                                    };
+                                    quote! {
+                                         let data = match #type_ident  {
+                                            #mat,
+                                            None => data
+                                         };
+                                    }
+                                };
+                                Some(res)
+                            }
+                        })
+                })
+                .collect::<Vec<_>>();
+            let data = if blocks.is_empty() {
+                quote! {}
+            } else {
+                quote! {
+                    let data = Form::new();
+                }
+            };
+            quote! {
+                #data
+                #( #blocks )*
+            }
         } else {
             quote! {}
         }
@@ -642,12 +791,11 @@ impl<'a> GenerateMethods<'a> {
         //         }
         //     }
         // }
-        // else if inputfile || !media.is_empty() {
-        //     quote! {
-        //         self.post_data(#endpoint, form, data).await?
-        //     }
-        // }
-        else {
+        else if inputfile || !media.is_empty() {
+            quote! {
+                self.post_data(#endpoint, form, data).await?
+            }
+        } else {
             quote! {
                 self.post(#endpoint, form).await?
             }
@@ -671,6 +819,7 @@ impl<'a> GenerateMethods<'a> {
 
         let instantiate = self.instantiate_urlencoding_struct(method)?;
         let file_handler = self.generate_file_handler(method);
+        let media_handler = self.generate_subtypes_file_handler(method);
         let post = self.generate_post(method);
         let comment = method.description.concat().comment();
         let generic = if method
@@ -689,6 +838,7 @@ impl<'a> GenerateMethods<'a> {
             #comment
             pub async fn #fn_name <'a #generic> (&self, #( #typenames: #types ),*) -> BotResult<#returntype>{
                 #file_handler
+                #media_handler
                 #instantiate
                 let resp = #post;
                 if resp.ok {
@@ -778,6 +928,7 @@ impl<'a> GenerateMethods<'a> {
                 bot::{Bot, Response, ApiError, BotResult},
                 gen_types::*,
             };
+            use std::ops::DerefMut;
         }
     }
 

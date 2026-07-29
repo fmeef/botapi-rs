@@ -326,12 +326,18 @@ impl Type {
     /// used for working with files
     pub(crate) fn is_media(&self) -> bool {
         self.name == "InputMedia"
+            || self.name == "InputPollMedia"
             || self
                 .subtype_of
                 .as_ref()
                 .map(|v| {
-                    v.iter()
-                        .fold(false, |b, s| if s == "InputMedia" { true } else { b })
+                    v.iter().fold(false, |b, s| {
+                        if s == "InputMedia" || s == "InputPollMedia" {
+                            true
+                        } else {
+                            b
+                        }
+                    })
                 })
                 .unwrap_or(false)
     }

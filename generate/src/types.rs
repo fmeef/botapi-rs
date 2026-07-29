@@ -821,17 +821,29 @@ impl<'a> GenerateTypes<'a> {
 
     /// If a type is a subtype of InputMedia generate multipart/form-data handler method as well
     fn generate_inputmedia_getter(&self, t: &Type) -> Result<TokenStream> {
-        if t.is_media() {
+        if t.is_media() && !(t.name == "InputMediaLocation" || t.name == "InputMediaVenue") {
             let q = quote! {
-               fn convert_form(self, data: Form) -> Result<(Form, String)> {
-                   match self.media {
-                        Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
-                            let attach = format!("attach://{}", name);
-                            let form = data.part(name, Part::bytes(bytes));
-                            Ok((form, attach))
-                        }
-                        Some(InputFile::String(name)) => Ok((data, name)),
-                        _ => Err(anyhow!("cry")),
+               pub fn convert_form(&mut self, data: Form) -> Result<Form> {
+                   if let Some(InputFile::Bytes(_)) = self.media {
+                       let attach = match self.media {
+                           Some(InputFile::Bytes(FileBytes { ref name, ..})) => Some(format!("attach://{name}")),
+                           _ => None
+                       };
+                       if let Some(attach) = attach {
+                           let media = ::std::mem::replace(&mut self.media, Some(InputFile::String(attach)));
+                           match media {
+                               Some(InputFile::Bytes(FileBytes { name, bytes: Some(bytes) })) => {
+                                   let form = data.part(name, Part::bytes(bytes));
+                                   Ok(form)
+                               }
+                               Some(InputFile::String(name)) => Ok(data),
+                               _ => Err(anyhow!("cry")),
+                           }
+                       } else {
+                           Ok(data)
+                       }
+                   } else {
+                       Ok(data)
                    }
                }
             };
@@ -1894,6 +1906,11 @@ impl<'a> GenerateTypes<'a> {
                     &self.0
                 }
 
+
+                // pub fn inner_mut(&self) -> & '_  mut T {
+                //     &mut self.0
+                // }
+
                 /// Consume this type and return the contained value
                 pub fn consume(self) -> T {
                     *self.0
@@ -1920,6 +1937,10 @@ impl<'a> GenerateTypes<'a> {
                     self.0.0
                 }
 
+                // pub fn inner_mut(&self) -> & '_  mut T {
+                //     &mut self.0
+                // }
+
                 /// Constructs a new BoxWrapper from a value
                 pub fn new_unbox(value: T) -> Self {
                     Self(Unbox(value))
@@ -1937,6 +1958,25 @@ impl<'a> GenerateTypes<'a> {
                 }
             }
 
+
+            // impl <'de, T> std::ops::DerefMut for BoxWrapper<Box<T>>
+            // where
+            //     T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            // {
+            //     fn deref_mut(&mut self) -> &mut Self::Target {
+            //         &mut self.0.0
+            //     }
+            // }
+
+
+            // impl <'de, T> std::ops::DerefMut for BoxWrapper<Unbox<T>>
+            // where
+            //     T: Serialize + Deserialize<'de> + Clone + Ord + PartialOrd + Eq + PartialEq + std::hash::Hash + std::fmt::Debug
+            // {
+            //     fn deref_mut(&mut self) -> &mut Self::Target {
+            //         &mut self.0.0
+            //     }
+            // }
 
             impl <'de, T> std::ops::Deref for BoxWrapper<Unbox<T>>
             where
