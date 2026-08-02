@@ -1346,11 +1346,10 @@ impl<'a> GenerateTypes<'a> {
         N: AsRef<str>,
         I: AsRef<str>,
     {
-        let subtypes = self
-            .spec
-            .get_type(name.as_ref())
-            .and_then(|v| v.subtypes.as_deref())
-            .or(extra_subtypes);
+        let ty = self.spec.get_type(name.as_ref());
+        let subtypes = ty.and_then(|v| v.subtypes.as_deref()).or(extra_subtypes);
+
+        let supertypes = ty.and_then(|v| v.subtype_of.as_deref());
 
         let skip_name = format_ident!("{}", name.as_ref());
         let no_skip_name = format_ident!("NoSkip{}", name.as_ref());
@@ -1622,11 +1621,22 @@ impl<'a> GenerateTypes<'a> {
                 }
             };
 
+            let rename = if supertypes
+                .as_deref()
+                .map(|v| v.contains(&"InputMedia".to_owned()))
+                .unwrap_or_default()
+            {
+                quote! { #[serde(rename = "InputMedia")] }
+            } else {
+                quote! {}
+            };
+
             //let enum_methods = self.generate_enum_methods()
 
             quote! {
                 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
                 #[serde(untagged)]
+                #rename
                 pub enum #name {
                     #(
                         #names_iter(#types_iter)
@@ -2164,7 +2174,11 @@ impl<'a> GenerateTypes<'a> {
                     f.iter().find(|n| n.name == "type").map_or_else(
                         || quote!(),
                         |f| {
-                            let typename = format!("NoSkip{}", &t.name);
+                            let typename = t
+                                .name
+                                .strip_prefix("InputMedia")
+                                .map(|v| v.to_case(Case::Lower))
+                                .unwrap_or_else(|| format!("{}", t.name));
 
                             match regular_type {
                                 Some("String") => {
@@ -2938,6 +2952,7 @@ impl<'a> GenerateTypes<'a> {
             .get_type(type_name)
             .ok_or_else(|| anyhow!("type not found"))?;
         let typename = format_ident!("{}", name.as_ref());
+        let namename = name.as_ref();
 
         let fieldnames = field_iter(t, |f| {
             let v = &f.name;
@@ -3037,9 +3052,23 @@ impl<'a> GenerateTypes<'a> {
             quote! { Default, }
         };
 
+        let rename = if t
+            .subtype_of
+            .as_deref()
+            .map(|v| v.contains(&"InputMedia".to_owned()))
+            .unwrap_or_default()
+        {
+            quote! { #[serde(rename = "InputMedia")] }
+        } else if serde_skip {
+            quote! { #[serde(rename = #namename)] }
+        } else {
+            quote! {}
+        };
+
         let res = quote! {
             #struct_comment
             #[derive(Serialize, Deserialize, Debug, #def Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+            #rename
             pub struct #typename {
                 #(
                     #fieldnames: #fieldtypes
