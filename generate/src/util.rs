@@ -158,17 +158,6 @@ where
     }
 }
 
-/// Get the name for a multitype enum
-pub(crate) fn get_multitype_name(fieldname: &Field) -> String {
-    if is_inputfile(fieldname) {
-        INPUT_FILE.to_owned()
-    } else {
-        let fieldname = &fieldname.name;
-        let fieldname = get_type_name_str(&fieldname);
-        format!("{}{}", MULTITYPE_ENUM_PREFIX, fieldname)
-    }
-}
-
 /// Check if a json spec type name is an "array" and return the offset of the actual type name
 pub(crate) fn is_array<T>(name: T) -> usize
 where

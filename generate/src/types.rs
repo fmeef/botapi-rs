@@ -125,10 +125,10 @@ impl<'a> GenerateTypes<'a> {
                     }
                 } else {
                     let skip = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name, true, true, false, None)
+                        .generate_enum_str(subtypes.as_slice(), &v.name, true, true, None)
                         .unwrap();
                     let noskip = self
-                        .generate_enum_str(subtypes.as_slice(), &v.name, false, true, false, None)
+                        .generate_enum_str(subtypes.as_slice(), &v.name, false, true, None)
                         .unwrap();
                     quote! {
                         #skip
@@ -861,7 +861,7 @@ impl<'a> GenerateTypes<'a> {
         } else {
             let res = if !is_inputfile_types(types) {
                 if let Some(name) = self.get_multitype_name_return(types) {
-                    let t = self.generate_enum_str(types, &name, true, false, false, None)?;
+                    let t = self.generate_enum_str(types, &name, true, false, None)?;
                     if !is_json_types(types) {
                         let typeiter = types.iter().map(get_type_name_str);
                         let types = generate_fmt_display_enum(&name, typeiter);
@@ -945,11 +945,9 @@ impl<'a> GenerateTypes<'a> {
             let types = types.into_iter().collect::<Vec<_>>();
             if types.len() > 1 && !is_inputfile_types(&types) {
                 if let Some(name) = self.get_multitype_name_types(&name, &types, &origin) {
-                    let t =
-                        self.generate_enum_str(&types, &name, true, true, true, Some(&types))?;
+                    let t = self.generate_enum_str(&types, &name, true, true, Some(&types))?;
                     tokens.extend(t);
-                    let t =
-                        self.generate_enum_str(&types, &name, false, true, true, Some(&types))?;
+                    let t = self.generate_enum_str(&types, &name, false, true, Some(&types))?;
                     tokens.extend(t);
 
                     if !is_json_types(&types) {
@@ -1104,29 +1102,6 @@ impl<'a> GenerateTypes<'a> {
             Some(INPUT_FILE.to_owned())
         } else if multitypes.get(&k).is_none() {
             let name = get_multitype_name_types(name, types);
-            Some(name)
-        } else {
-            None
-        }
-    }
-    /// Helper method for generating a name for a multitype enum while storing it in the mapping
-    /// for later use by methods generator
-    fn get_multitype_name(&self, field_name: &Field) -> Option<String> {
-        let mut multitypes = self
-            .multitypes
-            .write()
-            .expect("failed to lock write access");
-        let key = field_name
-            .types
-            .iter()
-            .map(get_type_name_str)
-            .collect::<Vec<String>>()
-            .join("");
-        if is_inputfile(field_name) {
-            Some(INPUT_FILE.to_owned())
-        } else if multitypes.get(&key).is_none() {
-            let name = get_multitype_name(field_name);
-            multitypes.insert(key, name.clone());
             Some(name)
         } else {
             None
@@ -1339,7 +1314,6 @@ impl<'a> GenerateTypes<'a> {
         name: &N,
         skip: bool,
         array: bool,
-        rename_array: bool,
         extra_subtypes: Option<&[String]>,
     ) -> Result<TokenStream>
     where
