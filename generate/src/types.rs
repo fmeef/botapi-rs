@@ -35,7 +35,9 @@ impl<'a> GenerateTypes<'a> {
                 let name = opts.name;
                 let nested = opts.nested;
                 let mytype = &types[0];
-                if is_inputfile_types(types) || (is_media && name == "media") {
+                if types.len() > 1 && types.iter().all(|t| t.contains("InputMedia")) {
+                    "InputMedia".to_owned()
+                } else if is_inputfile_types(types) || (is_media && name == "media") {
                     INPUT_FILE.to_owned()
                 } else if is_chatid(types) {
                     "ChatHandle".to_owned()
@@ -836,7 +838,7 @@ impl<'a> GenerateTypes<'a> {
                                    let form = data.part(name, Part::bytes(bytes));
                                    Ok(form)
                                }
-                               Some(InputFile::String(name)) => Ok(data),
+                               Some(InputFile::String(_)) => Ok(data),
                                _ => Err(anyhow!("cry")),
                            }
                        } else {

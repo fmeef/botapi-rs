@@ -28,7 +28,9 @@ impl<'a> GenerateMethods<'a> {
     pub(crate) fn generate_methods(self: &Rc<Self>) -> Result<String> {
         let this = Rc::clone(self);
         let choosetype = ChooseType::new(Arc::clone(&self.spec), move |opts| {
-            if is_chatid(opts.types) {
+            if opts.types.len() > 1 && opts.types.iter().all(|t| t.contains("InputMedia")) {
+                "InputMedia".to_owned()
+            } else if is_chatid(opts.types) {
                 "ChatHandle".to_owned()
             } else if opts.types.len() > 1 {
                 this.get_multitype_by_vec(opts.types).unwrap().to_owned()
@@ -65,12 +67,7 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, quote! { &'a str }).to_token_stream()
                 } else if is_chatid(&f.types) && generic {
                     is_optional(f, quote! { V }).to_token_stream()
-                }  else if f
-                    .types
-                    .iter()
-                    .flat_map(|v| self.spec.get_type(v))
-                    .any(|v| v.is_media())
-                {
+                } else if f.is_media(&self.spec) {
                     self.choose_type
                         .get()
                         .unwrap()
@@ -118,12 +115,7 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, quote! { &'a str }).to_token_stream()
                 } else if is_chatid(&f.types) && generic {
                     is_optional(f, quote! { V }).to_token_stream()
-                } else if f
-                    .types
-                    .iter()
-                    .flat_map(|v| self.spec.get_type(v))
-                    .any(|v| v.is_media())
-                {
+                } else if f.is_media(&self.spec) {
                     self.choose_type
                         .get()
                         .unwrap()
@@ -203,12 +195,7 @@ impl<'a> GenerateMethods<'a> {
                 quote! { FileData }
             } else if is_str_field(f) {
                 quote! { &'a str }
-            } else if f
-                .types
-                .iter()
-                .flat_map(|v| self.spec.get_type(v))
-                .any(|v| v.is_media())
-            {
+            } else if f.is_media(&self.spec) {
                 self.choose_type
                     .get()
                     .unwrap()
@@ -491,12 +478,7 @@ impl<'a> GenerateMethods<'a> {
                     is_optional(f, quote! { &'a str })
                 } else if is_chatid(&f.types) {
                     is_optional(f, quote! { V }).to_token_stream()
-                } else if f
-                    .types
-                    .iter()
-                    .flat_map(|v| self.spec.get_type(v))
-                    .any(|v| v.is_media())
-                {
+                } else if f.is_media(&self.spec) {
                     self.choose_type
                         .get()
                         .unwrap()
@@ -605,14 +587,14 @@ impl<'a> GenerateMethods<'a> {
 
     fn generate_subtypes_file_handler(&self, method: &Method) -> TokenStream {
         if let Some(ref fields) = method.fields {
+            let mut accesses = 0;
             let blocks = fields
                 .iter()
                 .flat_map(|f| {
                     let name = f.name.as_str();
                     let type_ident = format_ident!("{}", name);
-                    f.types
-                        .iter()
-                        .flat_map(|v| self.spec.get_type(&v))
+                    f.get_all_media_types(&self.spec)
+                        .into_iter()
                         .flat_map(move |t| {
                             let typename = get_type_name(t);
                             let typename = format_ident!("{}", typename);
@@ -650,9 +632,10 @@ impl<'a> GenerateMethods<'a> {
                                                #typename :: #v (_) => data
                                             }
                                         } else {
+                                            accesses += 1;
                                             quote! {
                                                 #typename :: #v (ref mut v) => {
-                                                    let data = v.convert_form(data)?;
+                                                    data = v.convert_form(data)?;
                                                     //self.media = Some(InputFile::String(format!("attach://{st}")));
                                                     data
                                                 }
@@ -662,10 +645,21 @@ impl<'a> GenerateMethods<'a> {
                                     let mat = quote! {
                                         #( #names_iter ),*
                                     };
-                                    quote! {
-                                         let data = match #type_ident {
-                                            #mat
-                                         };
+                                    accesses += 1;
+                                    if f.types.len() > 1 {
+                                        quote! {
+                                            for #type_ident in #type_ident .iter_mut() {
+                                             data = match #type_ident {
+                                                #mat
+                                             };
+                                            }
+                                        }
+                                    } else {
+                                        quote! {
+                                            data = match #type_ident {
+                                                #mat
+                                            };
+                                        }
                                     }
                                 } else {
                                     let names_iter = names_iter.iter().map(|v| {
@@ -688,11 +682,23 @@ impl<'a> GenerateMethods<'a> {
                                     let mat = quote! {
                                         #( #names_iter ),*
                                     };
-                                    quote! {
-                                         let data = match #type_ident  {
-                                            #mat,
-                                            None => data
-                                         };
+                                    accesses += 1;
+                                    if f.types.len() > 1 {
+                                        quote! {
+                                            for #type_ident in #type_ident .iter_mut() {
+                                                data = match #type_ident  {
+                                                 #mat,
+                                                    None => data
+                                                };
+                                            }
+                                        }
+                                    } else {
+                                        quote! {
+                                             data = match #type_ident  {
+                                                #mat,
+                                                None => data
+                                             };
+                                        }
                                     }
                                 };
                                 Some(res)
@@ -704,7 +710,7 @@ impl<'a> GenerateMethods<'a> {
                 quote! {}
             } else {
                 quote! {
-                    let data = Form::new();
+                    let mut data = Form::new();
                 }
             };
             quote! {
@@ -725,7 +731,7 @@ impl<'a> GenerateMethods<'a> {
         {
             let fieldlist = fieldlist.collect::<Vec<&Field>>();
             let res = if !fieldlist.is_empty() {
-                quote! { let data = Form::new(); }
+                quote! { let mut data = Form::new(); }
             } else {
                 quote!()
             };
@@ -736,17 +742,19 @@ impl<'a> GenerateMethods<'a> {
                 if field.required {
                     quote! {
                        // let inputfile = #typename.to_inputfile(#name.to_owned());
-                        let (data, #json_name) = #typename.convert_form(data, #name.to_owned())?;
+                        let (d, #json_name) = #typename.convert_form(data, #name.to_owned())?;
+                        data = d;
                     }
                 } else {
                     quote! {
-                        let (data, #json_name) = if let Some(#typename) = #typename {
+                        let (d, #json_name) = if let Some(#typename) = #typename {
                       //      let inputfile = #typename.to_inputfile(#name.to_owned());
                             let (data, #json_name) = #typename.convert_form(data, #name.to_owned())?;
                             (data, Some(#json_name))
                         } else {
                             (data, None)
                         };
+                        data = d;
                     }
                 }
             });
@@ -775,9 +783,7 @@ impl<'a> GenerateMethods<'a> {
             .as_deref()
             .unwrap_or_default()
             .iter()
-            .flat_map(|f| f.types.iter())
-            .flat_map(|f| self.spec.get_type(&f))
-            .filter(|v| v.is_media())
+            .flat_map(|f| f.get_media_types(&self.spec))
             .collect::<Vec<_>>();
         if method.fields.as_deref().unwrap_or_default().is_empty() {
             quote! {

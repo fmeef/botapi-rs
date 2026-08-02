@@ -343,6 +343,47 @@ impl Type {
     }
 }
 
+impl Field {
+    pub(crate) fn is_media(&self, spec: &Spec) -> bool {
+        if self.types.iter().all(|v| {
+            let v = type_without_array(&v);
+            v.starts_with("InputMedia")
+        }) {
+            return true;
+        }
+        self.types
+            .iter()
+            .flat_map(|v| spec.get_type(v))
+            .any(|v| v.is_media())
+    }
+
+    pub(crate) fn get_media_types<'a>(&'a self, spec: &'a Spec) -> Vec<&'a Type> {
+        if self.types.iter().all(|v| {
+            let v = type_without_array(&v);
+            v.starts_with("InputMedia")
+        }) {
+            return vec![spec.get_type("InputMedia").expect("Missing InputMedia")];
+        }
+
+        self.types
+            .iter()
+            .flat_map(|v| spec.get_type(&v))
+            .filter(|v| v.is_media())
+            .collect()
+    }
+
+    pub(crate) fn get_all_media_types<'a>(&'a self, spec: &'a Spec) -> Vec<&'a Type> {
+        if self.types.iter().all(|v| {
+            let v = type_without_array(&v);
+            v.starts_with("InputMedia")
+        }) {
+            return vec![spec.get_type("InputMedia").expect("Missing InputMedia")];
+        }
+
+        self.types.iter().flat_map(|v| spec.get_type(&v)).collect()
+    }
+}
+
 #[allow(dead_code)]
 impl Spec {
     /// Gets a type from the spec by name, None if nonexistent
