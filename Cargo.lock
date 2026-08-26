@@ -88,7 +88,7 @@ checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
 
 [[package]]
 name = "botapi"
-version = "0.0.85"
+version = "0.0.86"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "tggen"
-version = "0.0.85"
+version = "0.0.86"
 dependencies = [
  "anyhow",
  "convert_case",
