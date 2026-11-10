@@ -463,10 +463,20 @@ impl<'a> GenerateTypes<'a> {
                             self.has_method(fieldtype, field)
                         })
                         .map(|f| {
-                            let t = get_type_name_str(&f.name);
-                            let t = format_ident!("{}", t);
-                            quote! {
-                                Self::#t(ref v) => Some(v.#fieldname())
+                            if is_special_type(&f.types[0]) {
+                                let t = get_type_name_str(&f.name);
+                                let t = format_ident!("{}", t);
+
+                                quote! {
+                                    Self::#t(ref v) => Some(v.#fieldname().noskip())
+                                }
+                            } else {
+                                let t = get_type_name_str(&f.name);
+                                let t = format_ident!("{}", t);
+
+                                quote! {
+                                    Self::#t(ref v) => Some(v.#fieldname())
+                                }
                             }
                         })
                         .collect_vec();

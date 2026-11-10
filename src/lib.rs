@@ -50,9 +50,9 @@
 //! let bytes = vec![1,2,3];
 //! client
 //!     .build_send_photo(
-//!         message.get_chat().get_id(),
 //!            FileData::Bytes(bytes),
 //!     )
+//!     .chat_id(message.get_chat().get_id())
 //!     .caption("If you do not solve this captcha correctly you will be terminated by memetic kill agent")
 //!     .reply_parameters(&ReplyParametersBuilder::new()
 //!     .set_message_id(message.get_message_id())

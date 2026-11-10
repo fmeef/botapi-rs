@@ -225,7 +225,13 @@ where
 }
 
 pub(crate) fn is_special_type(val: &str) -> bool {
-    val == "BackgroundType" || val == "StoryAreaType" || val == "ReactionType"
+    match val {
+        "BackgroundType" => true,
+        "StoryAreaType" => true,
+        "ReactionType" => true,
+        "WidgetQueryType" => true,
+        _ => false,
+    }
 }
 
 /// Hacky workaround to break our dependency on multitype enums for now while serde_urlencoded
