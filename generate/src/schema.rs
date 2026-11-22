@@ -1,6 +1,6 @@
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::sync::RwLock;
 
 use anyhow::anyhow;
@@ -271,10 +271,10 @@ impl<'a> FeedbackArcSet<'a> {
 #[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub(crate) struct Spec {
-    pub(crate) types: HashMap<String, Type>,
-    pub(crate) methods: HashMap<String, Method>,
+    pub(crate) types: BTreeMap<String, Type>,
+    pub(crate) methods: BTreeMap<String, Method>,
     #[serde(default)]
-    boxed: RwLock<HashSet<String>>,
+    boxed: RwLock<BTreeSet<String>>,
     #[serde(default)]
     min: usize,
 }

@@ -9,7 +9,7 @@ use crate::naming::*;
 use crate::schema::{Field, Spec};
 use crate::util::*;
 use regex::Regex;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 lazy_static! {
@@ -463,12 +463,12 @@ impl<'a> GenerateTypes<'a> {
                             self.has_method(fieldtype, field)
                         })
                         .map(|f| {
-                            if f.types.iter().any(|t| is_special_type(t)) {
+                            if f.name == "type" {
                                 let t = get_type_name_str(&f.name);
                                 let t = format_ident!("{}", t);
 
                                 quote! {
-                                    Self::#t(ref v) => Some(v.#fieldname().noskip())
+                                    Self::#t(ref v) => Some(v.#fieldname().skip())
                                 }
                             } else {
                                 let t = get_type_name_str(&f.name);
@@ -2589,8 +2589,8 @@ impl<'a> GenerateTypes<'a> {
     //     }
     // }
 
-    pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-        let mut set = HashSet::<&Field>::new();
+    pub(crate) fn get_common_methods_recursive_ext(&'a self, t: &'a Type) -> BTreeSet<&'a Field> {
+        let mut set = BTreeSet::<&Field>::new();
 
         for field in t.pretty_fields() {
             let mt = field.types.first().unwrap();
@@ -2607,8 +2607,8 @@ impl<'a> GenerateTypes<'a> {
         set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
     }
 
-    pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> HashSet<&'a Field> {
-        let mut set = t.pretty_fields().collect::<HashSet<&Field>>();
+    pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> BTreeSet<&'a Field> {
+        let mut set = t.pretty_fields().collect::<BTreeSet<&Field>>();
         match t.subtypes {
             None => set,
             Some(ref subtypes) => {
@@ -2627,8 +2627,8 @@ impl<'a> GenerateTypes<'a> {
         }
     }
 
-    pub(crate) fn get_common_methods(&'a self, t: &Type) -> HashSet<&'a Field> {
-        let mut res = HashSet::<&Field>::new();
+    pub(crate) fn get_common_methods(&'a self, t: &Type) -> BTreeSet<&'a Field> {
+        let mut res = BTreeSet::<&Field>::new();
         if let Some(subtypes) = t.subtypes.as_ref() {
             if let Some(first) = subtypes.first() {
                 if let Some(first) = self.spec.get_type(first) {
