@@ -1432,7 +1432,9 @@ impl<'a> GenerateTypes<'a> {
                 if skip {
                     let match_arms = subtypes.iter().map(|t| {
                         let mut t = t.to_owned();
-                        let noskip = if t.starts_with("Array of") {
+                        let noskip = if is_special_type(&t) {
+                            quote! { v.noskip() }
+                        } else if t.starts_with("Array of") {
                             let v = type_without_array(&t);
                             let v = type_mapper(&v).to_case(Case::UpperCamel);
                             t = format!("{v}Arr");
