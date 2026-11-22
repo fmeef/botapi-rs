@@ -463,7 +463,7 @@ impl<'a> GenerateTypes<'a> {
                             self.has_method(fieldtype, field)
                         })
                         .map(|f| {
-                            if is_special_type(&f.types[0]) {
+                            if f.types.iter().any(|t| is_special_type(t)) {
                                 let t = get_type_name_str(&f.name);
                                 let t = format_ident!("{}", t);
 
@@ -2677,15 +2677,23 @@ impl<'a> GenerateTypes<'a> {
                         quote! { Option<#ret> }
                     };
 
-                    let match_arms = subtypes
-                        .iter()
-                        .map(get_type_name_str)
-                        .map(|t| format_ident!("{}", t))
-                        .map(|t| {
+                    let match_arms = subtypes.iter().map(|f| {
+                        if is_special_type(&f) {
+                            let t = get_type_name_str(&f);
+                            let t = format_ident!("{}", t);
+
+                            quote! {
+                                Self::#t(ref v) => v.#fieldname().noskip()
+                            }
+                        } else {
+                            let t = get_type_name_str(&f);
+                            let t = format_ident!("{}", t);
+
                             quote! {
                                 Self::#t(ref v) => v.#fieldname()
                             }
-                        });
+                        }
+                    });
 
                     let mat = quote! {
                         match self {
