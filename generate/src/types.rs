@@ -371,15 +371,6 @@ impl<'a> GenerateTypes<'a> {
             })
     }
 
-    fn has_method(&self, t: &Type, field: &Field) -> bool {
-        let common_methods = self.get_common_methods(t);
-        if let Some(fields) = t.fields.as_ref() {
-            fields.contains(field) || common_methods.contains(field)
-        } else {
-            common_methods.contains(field)
-        }
-    }
-
     /// Generates enum for special type that is either a chat id or chat username
     fn generate_chat_enum(&self) -> TokenStream {
         quote! {
@@ -457,13 +448,23 @@ impl<'a> GenerateTypes<'a> {
                     let match_arms = t
                         .pretty_fields()
                         .filter(|f| f.name != "update_id")
-                        .filter(|f| {
+                        .filter_map(|f| {
                             let fieldtype = f.types.first().unwrap();
                             let fieldtype = self.spec.get_type(fieldtype).unwrap();
-                            self.has_method(fieldtype, field)
+                            self.method_required(fieldtype, field)
+                                .map(|required| (f, required))
                         })
-                        .map(|f| {
-                            if f.name == "type" {
+                        .map(|(f, required)| {
+                            if required && !field.required {
+                                // the merged getter is optional but this variant's field is
+                                // required, wrap so all arms produce Option<Option<T>>
+                                let t = get_type_name_str(&f.name);
+                                let t = format_ident!("{}", t);
+
+                                quote! {
+                                    Self::#t(ref v) => Some(Some(v.#fieldname()))
+                                }
+                            } else if f.name == "type" {
                                 let t = get_type_name_str(&f.name);
                                 let t = format_ident!("{}", t);
 
@@ -2604,7 +2605,49 @@ impl<'a> GenerateTypes<'a> {
                 set = set.union(&hashset).cloned().collect();
             }
         }
-        set.iter().unique_by(|v| v.name.as_str()).cloned().collect()
+        Self::dedup_fields_by_name(set)
+    }
+
+    /// Collapse fields sharing a name into a single representative field.
+    ///
+    /// - If fields with the same name disagree on their types there is no single
+    ///   sensible return type for a getter, so the name is dropped entirely.
+    /// - If they only disagree on `required`, an optional field is chosen as the
+    ///   representative so the generated getter returns `Option<T>`; callers are
+    ///   expected to wrap required variants in `Some(..)` (see `method_required`).
+    ///
+    /// The input is a `BTreeSet`, so the representative choice is deterministic.
+    fn dedup_fields_by_name(set: BTreeSet<&'a Field>) -> BTreeSet<&'a Field> {
+        let mut by_name = BTreeMap::<&str, Vec<&'a Field>>::new();
+        for field in set {
+            by_name.entry(field.name.as_str()).or_default().push(field);
+        }
+
+        by_name
+            .into_values()
+            .filter_map(|fields| {
+                let first = fields.first()?;
+                if fields.iter().any(|f| f.types != first.types) {
+                    return None;
+                }
+                fields
+                    .iter()
+                    .find(|f| !f.required)
+                    .or(Some(first))
+                    .copied()
+            })
+            .collect()
+    }
+
+    /// Returns `Some(required)` if type `t` has a getter for a field with the same
+    /// name and types as `field`, where `required` is that field's own required flag.
+    /// Returns `None` if no such getter exists.
+    fn method_required(&self, t: &Type, field: &Field) -> Option<bool> {
+        let same = |f: &&Field| f.name == field.name && f.types == field.types;
+        t.pretty_fields()
+            .find(same)
+            .or_else(|| self.get_common_methods(t).into_iter().find(same))
+            .map(|f| f.required)
     }
 
     pub(crate) fn get_common_methods_recursive(&'a self, t: &'a Type) -> BTreeSet<&'a Field> {
